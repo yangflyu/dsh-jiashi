@@ -1,0 +1,7 @@
+# 架势画布（dsh-jiashi）
+# host 侧：把 Framework 的构建产物挂在 DSH 自己的 HTTP 服务下（同源 /jiashi/），
+#         不额外开端口、不需要跨域，静态资源随插件生命周期一起释放。
+# client 侧：在对话的 View 标签栏注册「画布」，选中后由同源 iframe 承载整个架势应用。
+- insert:
+    - id: jiashi-web
+      name: 'dsh-jiashi'

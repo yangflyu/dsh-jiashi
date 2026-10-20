@@ -1,0 +1,37 @@
+{
+  "name": "dsh-jiashi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "把架势的非线性画布接进 DSH：对话视图一键从线性消息切换为可摆放、可连线的画布。",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "web/**",
+    "src/**",
+    "scripts/**",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  }
+}
