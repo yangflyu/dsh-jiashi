@@ -16,7 +16,7 @@ import { injectDemoShapes } from './demo'
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { initStore } from './ai/conversation'
-import { createDshSessionId, sessionLog } from './session/bridge'
+import { createDshSessionId, nextSeqAfter, sessionLog } from './session/bridge'
 
 const customShapeUtils = [TextBlockShapeUtil]
 
@@ -26,13 +26,14 @@ type AppMode = 'canvas' | 'linear'
  * Toolbar — overlays on top of tldraw canvas.
  * Only rendered in canvas mode. In linear mode, LinearView has its own bar.
  */
-function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard }: {
+function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard, onCleanEmptyCards }: {
   onToggleMode: () => void
   onOpenSettings: () => void
   onOpenShortcuts: () => void
   onToggleAttention: () => void
   attentionActive: boolean
   onCreateSessionCard: () => void
+  onCleanEmptyCards: () => void
 }) {
   const editor = useEditor()
 
@@ -96,6 +97,17 @@ function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggle
 
       {/* Divider */}
       <div className="toolbar-divider" />
+
+      {/* 清理空卡：删掉没有内容也没有绑定会话的文本方框（可撤销） */}
+      <button className="toolbar-btn" onClick={onCleanEmptyCards} title="清理空卡：删除没有内容、也没有绑定会话的文本方框（可撤销）">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          <path d="M10 11v6M14 11v6" />
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+        </svg>
+        <span className="toolbar-label">清理空卡</span>
+      </button>
 
       {/* Attention / focus mode */}
       <button
@@ -506,6 +518,89 @@ export default function App() {
     }
   }, [editor])
 
+  // 手动画箭头连接两张文本块时：目标没有会话就继承来源的会话，并从来源结束位置之后续接。
+  useEffect(() => {
+    if (!editor) return undefined
+    const inherit = (record: any) => {
+      if (record?.typeName !== 'shape' || record?.type !== 'arrow') return
+      const props = record.props ?? {}
+      const fromId = props.start?.boundShapeId
+      const toId = props.end?.boundShapeId
+      if (typeof fromId !== 'string' || typeof toId !== 'string' || fromId === toId) return
+      const from = editor.getShape(fromId)
+      const to = editor.getShape(toId)
+      if (!from || !to || from.type !== 'text-block' || to.type !== 'text-block') return
+      const fromProps = from.props as { conversationId?: string; sessionToSeq?: number }
+      const toProps = to.props as { conversationId?: string }
+      if (fromProps.conversationId === undefined || toProps.conversationId !== undefined) return
+      const next = nextSeqAfter(fromProps.sessionToSeq)
+      // store 监听回调里不直接改 store，放到 microtask 里，避免嵌套事务告警。
+      queueMicrotask(() => {
+        try {
+          editor.updateShape({
+            id: to.id,
+            type: 'text-block',
+            props: {
+              conversationId: fromProps.conversationId,
+              ...(next !== undefined ? { sessionFromSeq: next } : {}),
+            },
+          })
+          sessionLog('session.inherit', { from: from.id, to: to.id, sessionId: fromProps.conversationId })
+        } catch (error) {
+          sessionLog('session.inherit-failed', { error: String((error as Error)?.message ?? error) })
+        }
+      })
+    }
+    const dispose = editor.store.listen(
+      ({ changes }) => {
+        const added = Object.values((changes as { added?: Record<string, unknown> }).added ?? {})
+        const updated = Object.values((changes as { updated?: Record<string, unknown> }).updated ?? {})
+        for (const record of [...added, ...updated]) inherit(record)
+      },
+      { scope: 'document', source: 'user' },
+    )
+    return () => dispose()
+  }, [editor])
+
+  // 清理空卡：删除"没有内容、也没有绑定会话"的普通文本方框（可撤销）。
+  const cleanEmptyCards = useCallback(() => {
+    if (!editor) return
+    const shapes = editor.getCurrentPageShapes()
+    const ids = new Set<string>()
+    for (const shape of shapes) {
+      if (shape.type !== 'text-block') continue
+      const props = shape.props as { conversationId?: string; content?: string; items?: unknown }
+      if (props.conversationId !== undefined && props.conversationId !== '') continue
+      const content = typeof props.content === 'string' ? props.content.trim() : ''
+      const items = Array.isArray(props.items) ? props.items : []
+      const hasText =
+        content !== '' ||
+        items.some(
+          (item) =>
+            item !== null &&
+            typeof item === 'object' &&
+            (item as { kind?: string }).kind === 'user' &&
+            String((item as { text?: string }).text ?? '').trim() !== '',
+        )
+      if (!hasText) ids.add(shape.id)
+    }
+    const arrows = shapes.filter((shape) => {
+      if (shape.type !== 'arrow') return false
+      const props = shape.props as { start?: { boundShapeId?: string }; end?: { boundShapeId?: string } }
+      const from = props.start?.boundShapeId
+      const to = props.end?.boundShapeId
+      return (typeof from === 'string' && ids.has(from)) || (typeof to === 'string' && ids.has(to))
+    })
+    if (ids.size === 0) {
+      sessionLog('cards.clean-empty', { count: 0 })
+      return
+    }
+    editor.batch(() => {
+      editor.deleteShapes([...ids, ...arrows.map((shape) => shape.id)])
+    })
+    sessionLog('cards.clean-empty', { count: ids.size, arrows: arrows.length })
+  }, [editor])
+
   // Build root class: adds `linear-mode-active` to hide tldraw canvas
   // and save GPU/CPU when LinearView is covering it.
   const rootClass =
@@ -563,6 +658,7 @@ export default function App() {
             onToggleAttention={toggleAttentionUI}
             attentionActive={attentionActive}
             onCreateSessionCard={createSessionCard}
+            onCleanEmptyCards={cleanEmptyCards}
           />
         )}
         {mode === 'linear' && <LinearView onBackToCanvas={toggleMode} />}

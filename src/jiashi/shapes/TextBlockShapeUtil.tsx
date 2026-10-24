@@ -17,7 +17,8 @@ import {
   TLShapeId,
 } from 'tldraw'
 import TextBlockContent from '../components/TextBlockContent'
-import { nextSeqAfter } from '../session/bridge'
+import { isDshSessionId, nextSeqAfter } from '../session/bridge'
+import { useSessionTitle } from '../session/SessionInfo'
 import { useState, useCallback, useRef, useEffect } from 'react'
 
 // AI 回复版本：原版始终保留，修改生成新版本
@@ -437,7 +438,11 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
     // ── 框头标题编辑状态 ──────────────────────────────────────
     const [editingTitle, setEditingTitle] = useState(false)
     const title = shape.props.title?.trim() ? shape.props.title!.trim() : TITLE_PLACEHOLDER
-    const isTitlePlaceholder = title === TITLE_PLACEHOLDER
+    // 绑定 DSH 会话的对话卡：标题还是占位符时显示会话标题（用户自己写过标题则优先用它）。
+    const dshTitleSessionId = isDshSessionId(shape.props.conversationId) ? shape.props.conversationId : undefined
+    const sessionTitle = useSessionTitle(dshTitleSessionId)
+    const displayTitle = title === TITLE_PLACEHOLDER && sessionTitle !== undefined ? sessionTitle : title
+    const isTitlePlaceholder = displayTitle === TITLE_PLACEHOLDER
 
     // 提交标题：空串回退占位符，非空写回 shape
     const commitTitle = useCallback((raw: string) => {
@@ -782,7 +787,7 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
-                <span className="tb-header-label">{title}</span>
+                <span className="tb-header-label">{displayTitle}</span>
               )}
             </div>
 

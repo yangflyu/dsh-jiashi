@@ -4,6 +4,7 @@ import katexCss from 'katex/dist/katex.min.css'
 import appCss from '../jiashi/App.css'
 import App from '../jiashi/App'
 import { configureSessionRuntime } from '../jiashi/session/bridge'
+import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 /**
  * 架势画布（dsh-jiashi）— Client 半边（v0.3，UI 移植版）。
@@ -18,7 +19,7 @@ import { configureSessionRuntime } from '../jiashi/session/bridge'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.4.4-bootfix'
+const MODULE_VERSION = '0.5.0-title-cleanup-inherit'
 
 const zh = { 'panel.label': '画布' }
 const en = { 'panel.label': 'Canvas' }
@@ -90,18 +91,20 @@ class BoardBoundary extends React.Component {
   }
 }
 
-/** 主面板：把原版 App 铺进 DSH 的中间列。 */
-function Board() {
+/** 主面板：把原版 App 铺进 DSH 的中间列，并把会话标题查询能力提供给画布内部。 */
+function Board(props) {
   React.useEffect(() => {
     boardLog('board.mount', { version: MODULE_VERSION })
   }, [])
   return (
-    <div
-      data-jiashi-board=""
-      style={{ position: 'relative', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden' }}
-    >
-      <App />
-    </div>
+    <SessionInfoProvider useSessions={props.useSessions}>
+      <div
+        data-jiashi-board=""
+        style={{ position: 'relative', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden' }}
+      >
+        <App />
+      </div>
+    </SessionInfoProvider>
   )
 }
 

@@ -1817,3 +1817,16 @@
   border-color: #3a3a3a;
   color: #d0d5dd;
 }
+
+/* ── 卡片/会话标题 ── */
+.jiashi-session-title {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: #344054;
+}
+.tl-theme__dark .jiashi-session-title {
+  color: #d0d5dd;
+}

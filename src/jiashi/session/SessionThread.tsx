@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { SESSION_TAIL_SEQ, isDshSessionId, sessionLog, sessionRuntime } from './bridge'
+import { useSessionTitle } from './SessionInfo'
 
 function useSessionEntry(sessionId: string) {
   const bridge = sessionRuntime.bridge
@@ -154,6 +155,7 @@ function SessionThreadInner({
   onMerge?: () => void
 }) {
   const { face, eventSource } = entry
+  const sessionTitle = useSessionTitle(face.sessionId)
   const snapshot = useSyncExternalStore(
     (listener: () => void) => face.subscribe(listener),
     () => face.getSnapshot(),
@@ -241,7 +243,9 @@ function SessionThreadInner({
     >
       <div className="jiashi-session-head">
         <span className="jiashi-session-dot" data-running={snapshot.running ? '1' : '0'} />
-        <span>DSH 对话</span>
+        <span className="jiashi-session-title" title={sessionTitle ?? 'DSH 对话'}>
+          {sessionTitle ?? 'DSH 对话'}
+        </span>
         {fromSeq !== undefined || !isTail ? (
           <span className="jiashi-session-range">
             {fromSeq !== undefined ? `#${fromSeq} 起` : '从头'}
