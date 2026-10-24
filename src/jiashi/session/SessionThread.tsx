@@ -107,6 +107,8 @@ export default function SessionThread({
   toSeq,
   onSplit,
   onMerge,
+  pendingPrompt,
+  onPendingPromptConsumed,
 }: {
   sessionId: string
   isDarkMode?: boolean
@@ -119,6 +121,9 @@ export default function SessionThread({
   onSplit?: (seq: number) => void
   /** 把这张分段卡合并回上一张（显示层操作） */
   onMerge?: () => void
+  /** 刚绑定会话时要自动发送的一句（只发一次） */
+  pendingPrompt?: string
+  onPendingPromptConsumed?: () => void
 }) {
   const { entry, error } = useSessionEntry(sessionId)
   if (error !== null) {
@@ -135,6 +140,8 @@ export default function SessionThread({
       toSeq={toSeq}
       onSplit={onSplit}
       onMerge={onMerge}
+      pendingPrompt={pendingPrompt}
+      onPendingPromptConsumed={onPendingPromptConsumed}
     />
   )
 }
@@ -146,6 +153,8 @@ function SessionThreadInner({
   toSeq,
   onSplit,
   onMerge,
+  pendingPrompt,
+  onPendingPromptConsumed,
 }: {
   entry: any
   compact: boolean
@@ -153,6 +162,8 @@ function SessionThreadInner({
   toSeq?: number
   onSplit?: (seq: number) => void
   onMerge?: () => void
+  pendingPrompt?: string
+  onPendingPromptConsumed?: () => void
 }) {
   const { face, eventSource } = entry
   const sessionTitle = useSessionTitle(face.sessionId)
@@ -210,6 +221,30 @@ function SessionThreadInner({
       setSending(false)
     }
   }, [draft, face, sending])
+
+  // 统一到 DSH 的交接：卡片刚绑定会话时，把用户刚输入的那句发进去（只发一次）。
+  const pendingSentRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (pendingPrompt === undefined || pendingPrompt === '') return
+    if (pendingSentRef.current === pendingPrompt) return
+    pendingSentRef.current = pendingPrompt
+    void (async () => {
+      try {
+        const result = await face.prompt([{ type: 'text', text: pendingPrompt }], 'queue')
+        if (result !== null && typeof result === 'object' && result.ok === false) {
+          setSendError(result.error?.message ?? '发送失败')
+        } else {
+          sessionLog('thread.prompt', { sessionId: face.sessionId })
+        }
+      } catch (reason) {
+        const message = String((reason as Error)?.message ?? reason)
+        setSendError(message)
+        sessionLog('thread.prompt-failed', { sessionId: face.sessionId, message })
+      } finally {
+        onPendingPromptConsumed?.()
+      }
+    })()
+  }, [pendingPrompt, face, onPendingPromptConsumed])
 
   const openNative = useCallback(() => {
     try {

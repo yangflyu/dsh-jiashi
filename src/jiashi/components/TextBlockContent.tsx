@@ -10,7 +10,7 @@ import {
 } from '../shapes/TextBlockShapeUtil'
 import AIInputBar from './AIInputBar'
 import SessionThread from '../session/SessionThread'
-import { SESSION_TAIL_SEQ, isDshSessionId, sessionLog } from '../session/bridge'
+import { SESSION_TAIL_SEQ, createDshSessionId, isDshSessionId, sessionLog } from '../session/bridge'
 import MarkdownPreview from './MarkdownPreview'
 import MarkdownBlockEditor, { type BlockEditorHandle } from './MarkdownBlockEditor'
 import {
@@ -694,6 +694,16 @@ export default function TextBlockContent({
     model: string
     content: string
   } | null>(null)
+
+  // ── 统一到 DSH：未绑定会话的卡片第一次发 AI 消息时，先建会话再把这句送进去 ──
+  const [pendingDshPrompt, setPendingDshPrompt] = useState<string | null>(null)
+  const handleDshSend = useCallback(async (text: string) => {
+    if (!editor) throw new Error('editor unavailable')
+    const sessionId = await createDshSessionId()
+    setPendingDshPrompt(text)
+    editor.updateShape({ id: shape.id, type: 'text-block', props: { conversationId: sessionId } })
+    sessionLog('session.bind-on-send', { sessionId, shapeId: shape.id })
+  }, [editor, shape])
 
   // ── 有序混合条目 items ──
   // 优先使用 props.items（新格式）；旧数据迁移：user 片段在前 + AI 回复在后
@@ -1495,6 +1505,8 @@ export default function TextBlockContent({
               toSeq={sessionToSeq}
               onSplit={handleSessionSplit}
               onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
+              pendingPrompt={pendingDshPrompt ?? undefined}
+              onPendingPromptConsumed={() => setPendingDshPrompt(null)}
             />
           ) : (
             <AIInputBar
@@ -1505,6 +1517,7 @@ export default function TextBlockContent({
               onAiStreamStart={handleAiStreamStart}
               onAiStreamUpdate={handleAiStreamUpdate}
               onAiStreamEnd={handleAiStreamEnd}
+              onDshSend={handleDshSend}
             />
           )}
         </div>
@@ -1574,6 +1587,8 @@ export default function TextBlockContent({
               toSeq={sessionToSeq}
               onSplit={handleSessionSplit}
               onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
+              pendingPrompt={pendingDshPrompt ?? undefined}
+              onPendingPromptConsumed={() => setPendingDshPrompt(null)}
             />
           )}
         </div>

@@ -32,6 +32,11 @@ interface Props {
   onAiStreamUpdate?: (fullContent: string) => void
   /** Called when streaming completes */
   onAiStreamEnd?: (model: string, fullContent: string, prompt: string) => void
+  /**
+   * 统一到 DSH：提供这个回调时，发送不再走本地 AI，
+   * 而是由父组件建/接入一条 DSH 会话并把这句送进去。
+   */
+  onDshSend?: (text: string) => Promise<void>
 }
 
 export default function AIInputBar({
@@ -42,11 +47,13 @@ export default function AIInputBar({
   onAiStreamStart,
   onAiStreamUpdate,
   onAiStreamEnd,
+  onDshSend,
 }: Props) {
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const dshMode = onDshSend !== undefined
 
   // Resolve conversation label for display
   const convLabel = conversationId ? getConversationLabel(conversationId) : null
@@ -54,6 +61,22 @@ export default function AIInputBar({
   const handleSend = useCallback(async () => {
     const text = prompt.trim()
     if (!text || loading) return
+
+    // Unity mode: hand the first message to the DSH session instead of the local AI stack.
+    if (onDshSend !== undefined) {
+      setError('')
+      setLoading(true)
+      try {
+        await onDshSend(text)
+        setPrompt('')
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '接入 DSH 会话失败')
+      } finally {
+        setLoading(false)
+        inputRef.current?.focus()
+      }
+      return
+    }
 
     const settings = await loadAISettings()
     if (!settings.apiKey) {
@@ -112,7 +135,7 @@ export default function AIInputBar({
       setLoading(false)
       inputRef.current?.focus()
     }
-  }, [prompt, loading, conversationId, onConversationChange, contextContents, contentText, onAiStreamStart, onAiStreamUpdate, onAiStreamEnd])
+  }, [prompt, loading, conversationId, onConversationChange, contextContents, contentText, onAiStreamStart, onAiStreamUpdate, onAiStreamEnd, onDshSend])
 
   const handleNewConversation = useCallback(async () => {
     const conv = await createConversation()
@@ -137,8 +160,9 @@ export default function AIInputBar({
       <div className="ai-conv-header">
         <span className="ai-conv-label">
           <span className="ai-conv-dot" />
-          {convLabel ?? '新对话'}
+          {dshMode ? 'DSH 对话（首次发送会新建会话）' : (convLabel ?? '新对话')}
         </span>
+        {dshMode ? null : (
         <div className="ai-conv-actions">
           {hasHistory && (
             <span className="ai-conv-count">
@@ -154,6 +178,7 @@ export default function AIInputBar({
             + 新建
           </button>
         </div>
+        )}
       </div>
 
       {/* Context hint */}
@@ -174,7 +199,7 @@ export default function AIInputBar({
           ref={inputRef}
           type="text"
           className="ai-input-field"
-          placeholder={loading ? 'AI 正在生成...' : '追问或输入新提示词...'}
+          placeholder={loading ? '正在接入 DSH 会话…' : dshMode ? '输入后发送，会新建/接入一条 DSH 会话…' : '追问或输入新提示词...'}
           value={prompt}
           onChange={e => { setPrompt(e.target.value); setError('') }}
           onKeyDown={handleKeyDown}
