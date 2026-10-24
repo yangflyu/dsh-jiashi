@@ -1,0 +1,1819 @@
+/* ── App root ──────────────────────────────── */
+
+.app-root {
+  /* 原版是 fixed 铺满整个页面；嵌入 DSH 主面板后改成相对容器铺满，
+     不再盖住 DSH 的左右侧栏。 */
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Custom toolbar (overlay on top of tldraw) ── */
+
+.custom-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  gap: 6px;
+  pointer-events: all;
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #333333;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.toolbar-btn:hover {
+  background: #f5f7fa;
+  border-color: #4f7cff;
+  color: #4f7cff;
+}
+
+.toolbar-btn:active {
+  background: #eef1f6;
+}
+
+/* Accent (linear-view) button */
+.toolbar-btn-accent {
+  border-color: #4f7cff;
+  color: #4f7cff;
+  background: #f0f4ff;
+}
+
+.toolbar-btn-accent:hover {
+  background: #dce6ff;
+  border-color: #3d6ae8;
+  color: #3d6ae8;
+}
+
+/* Primary (canvas-mode-back) button */
+.toolbar-btn-primary {
+  background: #4f7cff;
+  color: #ffffff;
+  border-color: #4f7cff;
+}
+
+.toolbar-btn-primary:hover {
+  background: #3d6ae8;
+  border-color: #3d6ae8;
+  color: #ffffff;
+}
+
+/* ── Add child node button on text blocks ── */
+
+.tb-wrapper {
+  /* hover context for add-child button */
+}
+
+/* ── 框头标题栏 ── */
+
+.tb-header {
+  flex-shrink: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.02);
+  cursor: default;
+  user-select: none;
+  position: relative;
+  z-index: 2;
+}
+
+.tl-theme__dark .tb-header {
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tb-header-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #444441;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-theme__dark .tb-header-label {
+  color: #cdd6f4;
+}
+
+.tb-header-placeholder .tb-header-label {
+  color: #b4b2a9;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.tl-theme__dark .tb-header-placeholder .tb-header-label {
+  color: #6b6a76;
+}
+
+.tb-header-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  border: 1px solid #7c4dff;
+  border-radius: 4px;
+  outline: none;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 0 6px;
+  color: #444441;
+  background: #ffffff;
+}
+
+.tl-theme__dark .tb-header-input {
+  background: #26215C;
+  color: #e8e6f5;
+}
+
+.tb-wrapper:hover .tb-add-child-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tb-add-child-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: #4f7cff;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(79, 124, 255, 0.35);
+  transition: opacity 0.15s, transform 0.15s;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  user-select: none;
+  padding: 0;
+}
+
+.tb-add-child-btn.tb-add-child-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tb-add-child-btn:hover {
+  background: #3d6ae8;
+  transform: scale(1.15);
+  box-shadow: 0 3px 12px rgba(79, 124, 255, 0.5);
+}
+
+.tb-add-child-btn:active {
+  transform: scale(0.92);
+}
+
+.tl-theme__dark .tb-add-child-btn {
+  background: #6c8cff;
+}
+
+.tl-theme__dark .tb-add-child-btn:hover {
+  background: #8ca4ff;
+}
+
+/* ── Pull-out drag handles (Phase 5: "选中拉出" 手势) ── */
+
+.pull-handle {
+  position: absolute;
+  z-index: 20;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: #7c4dff;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: auto;
+  filter: drop-shadow(0 1px 3px rgba(124, 77, 255, 0.4));
+}
+
+.pull-handle:hover {
+  opacity: 1;
+  transform: scale(1.15);
+  color: #651fff;
+}
+
+.pull-handle:active {
+  cursor: grabbing;
+  transform: scale(0.95);
+}
+
+/* Position: bottom edge center */
+.pull-handle-bottom {
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.6);
+  opacity: 0.85;
+}
+.pull-handle-bottom:hover {
+  transform: translateX(-50%) scale(1.15);
+}
+.pull-handle-bottom:active {
+  transform: translateX(-50%) scale(0.95);
+}
+
+/* Position: right edge center */
+.pull-handle-right {
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.6);
+  opacity: 0.85;
+}
+.pull-handle-right:hover {
+  transform: translateY(-50%) scale(1.15);
+}
+.pull-handle-right:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+/* Position: left edge center */
+.pull-handle-left {
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.6);
+  opacity: 0.85;
+}
+.pull-handle-left:hover {
+  transform: translateY(-50%) scale(1.15);
+}
+.pull-handle-left:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+/* Dark mode */
+.tl-theme__dark .pull-handle {
+  color: #b39dff;
+  filter: drop-shadow(0 1px 4px rgba(179, 157, 255, 0.5));
+}
+.tl-theme__dark .pull-handle:hover {
+  color: #d1c4ff;
+}
+
+/* ── 选中文字拖出浮动预览 (Phase 5: 文字选中拉出手势) ── */
+
+.text-pull-preview {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.94);
+  border: 2px dashed #7c4dff;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #333;
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 16px rgba(124, 77, 255, 0.25);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.tl-theme__dark .text-pull-preview {
+  background: rgba(30, 30, 46, 0.94);
+  border-color: #b39dff;
+  color: #cdd6f4;
+  box-shadow: 0 4px 16px rgba(179, 157, 255, 0.3);
+}
+
+.toolbar-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Divider between tool groups */
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: #d0d5dd;
+  margin: 0 4px;
+}
+
+/* ── Dark theme overrides ── */
+
+.tl-theme__dark .toolbar-btn {
+  background: #2a2a3c;
+  border-color: #3a3a5c;
+  color: #cdd6f4;
+}
+
+.tl-theme__dark .toolbar-btn:hover {
+  background: #353555;
+  border-color: #6c8cff;
+  color: #6c8cff;
+}
+
+.tl-theme__dark .toolbar-btn-accent {
+  border-color: #6c8cff;
+  color: #6c8cff;
+  background: #252545;
+}
+
+.tl-theme__dark .toolbar-btn-accent:hover {
+  background: #303060;
+  border-color: #8cabff;
+  color: #8cabff;
+}
+
+.tl-theme__dark .toolbar-btn-primary {
+  background: #6c8cff;
+  border-color: #6c8cff;
+  color: #ffffff;
+}
+
+.tl-theme__dark .toolbar-btn-primary:hover {
+  background: #5a7af0;
+  border-color: #5a7af0;
+}
+
+.tl-theme__dark .toolbar-divider {
+  background: #3a3a5c;
+}
+
+/* Hide tldraw canvas when in linear mode
+   — but keep the editor store alive underneath */
+.linear-mode-active .tl-canvas {
+  display: none !important;
+}
+
+/* ── TextBlock: content area ────────────────── */
+
+.textblock-content {
+  display: flex;
+  flex-direction: column;
+  user-select: text;
+  /* Override tldraw's pointer-events:none on .tl-overlays__item */
+  pointer-events: auto;
+}
+
+/* ── TipTap editor ─────────────────────────── */
+
+.textblock-editor {
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.textblock-editor .tiptap {
+  outline: none;
+}
+
+/* TipTap — base typography inside editor */
+.textblock-editor .tiptap h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+}
+.textblock-editor .tiptap h2 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 0.5em 0 0.3em;
+}
+.textblock-editor .tiptap h3 {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin: 0.4em 0 0.2em;
+}
+.textblock-editor .tiptap p {
+  margin: 0.2em 0;
+}
+.textblock-editor .tiptap ul,
+.textblock-editor .tiptap ol {
+  padding-left: 1.4em;
+  margin: 0.2em 0;
+}
+.textblock-editor .tiptap blockquote {
+  border-left: 3px solid #4f7cff;
+  padding-left: 12px;
+  margin: 6px 0;
+  opacity: 0.85;
+}
+.textblock-editor .tiptap code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.textblock-editor .tiptap pre {
+  background: #f5f5f5;
+  padding: 10px 14px;
+  border-radius: 6px;
+  overflow: auto;
+  font-size: 0.85em;
+}
+.textblock-editor .tiptap pre code {
+  background: none;
+  padding: 0;
+}
+
+/* Placeholder */
+.textblock-editor .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Dark mode — TipTap text colors */
+.tl-theme__dark .textblock-editor .tiptap {
+  color: #cdd6f4;
+}
+.tl-theme__dark .textblock-editor .tiptap h1,
+.tl-theme__dark .textblock-editor .tiptap h2,
+.tl-theme__dark .textblock-editor .tiptap h3,
+.tl-theme__dark .textblock-editor .tiptap p,
+.tl-theme__dark .textblock-editor .tiptap ul,
+.tl-theme__dark .textblock-editor .tiptap ol,
+.tl-theme__dark .textblock-editor .tiptap strong,
+.tl-theme__dark .textblock-editor .tiptap em {
+  color: #cdd6f4;
+}
+.tl-theme__dark .textblock-editor .tiptap code {
+  color: #f38ba8;
+  background: #313244;
+}
+.tl-theme__dark .textblock-editor .tiptap pre {
+  background: #1a1a2e;
+}
+.tl-theme__dark .textblock-editor .tiptap pre code {
+  color: #cdd6f4;
+}
+.tl-theme__dark .textblock-editor .tiptap blockquote {
+  color: #bac2de;
+  border-left-color: #6c8cff;
+}
+
+/* ── Markdown preview ──────────────────────── */
+
+.textblock-preview {
+  width: 100%;
+  height: 100%;
+}
+
+.textblock-preview .katex {
+  font-size: 1.05em;
+}
+
+.textblock-preview .katex-display {
+  margin: 0.6em 0;
+}
+
+/* ── 混合编辑器的 markdown 块（编辑态） ──────────────
+   刻意**不做**任何容器装饰（无 hover 底色 / 无左侧竖线 / 源码态无边框）——
+   对齐 Obsidian Live Preview 的手感：块的渲染态与源码态外观完全一致，
+   「现在处于源码态」这件事只由内容本身（露出的 `##`、`-`、``` 等标记）来传达。
+   因此 padding / margin 必须两态严格对齐，否则切换瞬间会跳字。 */
+
+.tb-md-editor {
+  display: flex;
+  flex-direction: column;
+  /* 块间距由容器统一给（≈ 预览态里相邻块段落的 margin 折叠值 4.2px），
+     这样下面才能把各块自身的外边距抹平而不显得挤 */
+  gap: 4px;
+}
+
+.tb-md-block {
+  position: relative;
+}
+
+/* 渲染态块：就是纯渲染外观，无任何装饰，只有一个文本光标提示可点 */
+.tb-md-rendered {
+  padding: 1px 6px;
+  margin: 0 -6px;
+  cursor: text;
+}
+
+/* 抹平根元素的外边距 —— 渲染产物（p / h1-h3 / ul / pre / blockquote …）自带
+   上下 margin，而源码态的 textarea 没有。不抹平的话，点击切换时该块会
+   忽高忽低、下面的块跟着抖（实测段落差 8px、代码块差 1em 更明显）。
+   抹平后两态的盒模型逐项相等，切换时文字纹丝不动。
+   注：必须 !important —— MarkdownPreview 是拿行内 style 给这些元素设 margin 的，
+   普通选择器压不过行内样式。 */
+.tb-md-rendered > :first-child {
+  margin-top: 0 !important;
+}
+
+.tb-md-rendered > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.tb-md-rendered-empty {
+  min-height: 1.4em;
+}
+
+.tb-md-placeholder {
+  opacity: 0.35;
+  font-style: italic;
+}
+
+/* 源码态：字体 / 行高 / 颜色 / 内边距与渲染态逐项对齐，切换瞬间不跳字 */
+.tb-md-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  border: none;
+  outline: none;
+  padding: 1px 6px;
+  margin: 0 -6px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: transparent;
+  color: inherit;
+}
+
+.tb-md-editor .katex {
+  font-size: 1.05em;
+}
+
+.tb-md-editor .katex-display {
+  margin: 0.6em 0;
+}
+
+/* ── 用户文本卡片（子盒子，结构存在但视觉透明） ── */
+
+.tb-user-card {
+  padding: 0;
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  line-height: 1.7;
+  min-height: 1.2em;
+  /* 无边框、无背景 — 视觉上「看上去没有」 */
+}
+
+/* .tb-user-card:empty removed — was hiding empty cards in preview mode
+   while SubBoxDragHandle remained visible, causing layout misalignment */
+
+/* ── AI 回复卡片 ───────────────────────── */
+
+.tb-ai-card {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.tb-ai-card:hover {
+  box-shadow: 0 2px 12px rgba(124, 77, 255, 0.15);
+}
+
+/* ── AI 回复卡片头部（模型名 + 版本标签栏） ── */
+
+.tb-ai-card-header {
+  user-select: none;
+}
+
+/* ── 版本标签 ── */
+
+.tb-version-tab {
+  transition: all 0.15s ease;
+}
+
+.tb-version-tab:hover {
+  opacity: 1 !important;
+  transform: translateY(-1px);
+}
+
+/* ── 版本重命名输入框 ── */
+
+.tb-version-rename-input {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+}
+
+/* ── 暗色模式适配 ── */
+
+.tl-theme__dark .tb-ai-card {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+
+.tl-theme__dark .tb-ai-card:hover {
+  box-shadow: 0 2px 16px rgba(124, 77, 255, 0.25);
+}
+
+.tl-theme__dark .tb-version-add-btn {
+  color: #8e98a9;
+}
+
+.tl-theme__dark .tb-version-add-btn:hover {
+  color: #6c8cff;
+  border-color: #6c8cff !important;
+}
+
+/* ── HTML preview content: reuse TipTap's WYSIWYG styling ── */
+
+.textblock-preview-content {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.textblock-preview-content h1 { font-size: 1.5em; margin: 0.6em 0 0.3em; font-weight: 700; }
+.textblock-preview-content h2 { font-size: 1.3em; margin: 0.5em 0 0.3em; font-weight: 600; }
+.textblock-preview-content h3 { font-size: 1.15em; margin: 0.4em 0 0.2em; font-weight: 600; }
+.textblock-preview-content p { margin: 0.3em 0; }
+.textblock-preview-content ul { padding-left: 1.4em; margin: 0.3em 0; }
+.textblock-preview-content ol { padding-left: 1.4em; margin: 0.3em 0; }
+.textblock-preview-content blockquote {
+  border-left: 3px solid #4f7cff;
+  padding-left: 12px;
+  margin: 6px 0;
+  opacity: 0.85;
+}
+.textblock-preview-content code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.textblock-preview-content pre {
+  background: #f5f5f5;
+  padding: 10px 14px;
+  border-radius: 6px;
+  overflow: auto;
+  font-size: 0.85em;
+}
+.textblock-preview-content pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.tl-theme__dark .textblock-preview-content blockquote {
+  border-left-color: #6c8cff;
+}
+.tl-theme__dark .textblock-preview-content code {
+  background: #313244;
+}
+.tl-theme__dark .textblock-preview-content pre {
+  background: #1a1a2e;
+}
+
+/* ── [Phase 3] selection "pull-out" cursor ── */
+
+.textblock-content ::selection {
+  background: rgba(79, 124, 255, 0.25);
+}
+
+/* ── Linear mode scrollbar ── */
+
+.linear-view-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.linear-view-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.linear-view-scroll::-webkit-scrollbar-thumb {
+  background: #c0c8d4;
+  border-radius: 4px;
+}
+
+.linear-view-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a0a8b4;
+}
+
+.tl-theme__dark .linear-view-scroll::-webkit-scrollbar-thumb {
+  background: #3a3a5c;
+}
+
+.tl-theme__dark .linear-view-scroll::-webkit-scrollbar-thumb:hover {
+  background: #4a4a6c;
+}
+
+/* ── AI Settings Panel ──────────────────────── */
+
+.ai-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+.ai-settings-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 28px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ai-settings-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.ai-settings-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #555;
+}
+
+.ai-settings-input {
+  padding: 10px 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #333;
+  background: #fafbfc;
+  transition: border-color 0.15s;
+  outline: none;
+}
+
+.ai-settings-input:focus {
+  border-color: #4f7cff;
+  background: #ffffff;
+}
+
+.ai-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* AI buttons (shared) */
+.ai-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ai-btn-primary {
+  background: #4f7cff;
+  color: #ffffff;
+  border-color: #4f7cff;
+}
+
+.ai-btn-primary:hover {
+  background: #3d6ae8;
+}
+
+.ai-btn-secondary {
+  background: #f0f1f3;
+  color: #555;
+  border-color: #d0d5dd;
+}
+
+.ai-btn-secondary:hover {
+  background: #e4e6ea;
+}
+
+/* ── AI Input Bar (inside text block editor) ── */
+
+.ai-input-bar {
+  margin-top: 8px;
+  border-top: 1px solid #e0e4ea;
+  padding-top: 8px;
+  pointer-events: auto;
+}
+
+/* Conversation header: label + new conversation button */
+.ai-conv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.ai-conv-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4f7cff;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-conv-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4f7cff;
+  flex-shrink: 0;
+}
+
+.ai-conv-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-conv-count {
+  font-size: 11px;
+  color: #8e98a9;
+}
+
+.ai-conv-new-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.ai-conv-new-btn:hover:not(:disabled) {
+  border-color: #4f7cff;
+  color: #4f7cff;
+}
+
+.ai-conv-new-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ai-input-field {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #333;
+  background: #fafbfc;
+  outline: none;
+  transition: border-color 0.15s;
+  pointer-events: auto;
+}
+
+.ai-input-field:focus {
+  border-color: #4f7cff;
+  background: #ffffff;
+}
+
+.ai-input-field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ai-input-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #4f7cff;
+  background: #4f7cff;
+  color: #ffffff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.ai-input-send:hover:not(:disabled) {
+  background: #3d6ae8;
+}
+
+.ai-input-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-input-error {
+  font-size: 12px;
+  color: #e74c3c;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.ai-input-context-hint {
+  font-size: 11px;
+  color: #8e98a9;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.4;
+}
+
+.ai-input-context-hint::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4f7cff;
+  flex-shrink: 0;
+}
+
+/* Spinner for loading */
+.ai-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: ai-spin 0.6s linear infinite;
+}
+
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── TextBlock editor wrapper (editor + AI bar) ── */
+
+.textblock-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 1.2em;
+}
+
+.textblock-editor-wrapper .textblock-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Fix: override tldraw canvas touch-action:none so text selection
+   inside TipTap's contenteditable works normally on all browsers */
+.textblock-editor-content {
+  touch-action: auto !important;
+}
+
+/* ── Conversation tag (preview mode) ── */
+
+.conv-tag {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(79, 124, 255, 0.12);
+  color: #4f7cff;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Dark theme overrides for AI components ── */
+
+.tl-theme__dark .ai-settings-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.tl-theme__dark .ai-settings-panel {
+  background: #1e1e32;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.tl-theme__dark .ai-settings-title {
+  color: #cdd6f4;
+}
+
+.tl-theme__dark .ai-settings-label {
+  color: #a0a8c0;
+}
+
+.tl-theme__dark .ai-settings-input {
+  background: #12121e;
+  border-color: #3a3a5c;
+  color: #cdd6f4;
+}
+
+.tl-theme__dark .ai-settings-input:focus {
+  border-color: #6c8cff;
+  background: #1a1a2e;
+}
+
+.tl-theme__dark .ai-btn-secondary {
+  background: #2a2a3c;
+  color: #a0a8c0;
+  border-color: #3a3a5c;
+}
+
+.tl-theme__dark .ai-btn-secondary:hover {
+  background: #353555;
+}
+
+.tl-theme__dark .ai-input-bar {
+  border-top-color: #3a3a5c;
+}
+
+.tl-theme__dark .ai-conv-new-btn {
+  border-color: #3a3a5c;
+  color: #8e98a9;
+}
+
+.tl-theme__dark .ai-conv-new-btn:hover:not(:disabled) {
+  border-color: #6c8cff;
+  color: #6c8cff;
+}
+
+.tl-theme__dark .ai-conv-count {
+  color: #7e8aaa;
+}
+
+.tl-theme__dark .ai-input-context-hint {
+  color: #7e8aaa;
+}
+
+.tl-theme__dark .conv-tag {
+  background: rgba(108, 140, 255, 0.15);
+  color: #6c8cff;
+}
+
+.tl-theme__dark .ai-input-field {
+  background: #12121e;
+  border-color: #3a3a5c;
+  color: #cdd6f4;
+}
+
+.tl-theme__dark .ai-input-field:focus {
+  border-color: #6c8cff;
+  background: #1a1a2e;
+}
+
+/* Settings button in toolbar */
+.toolbar-btn-settings {
+  margin-left: 4px;
+}
+
+/* ── Keyboard Shortcut Editor ───────────────── */
+
+.kbs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+.kbs-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  width: 560px;
+  max-width: 92vw;
+  max-height: 80vh;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.kbs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid #e8ecf1;
+  flex-shrink: 0;
+}
+
+.kbs-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.kbs-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.kbs-hint {
+  padding: 10px 24px;
+  font-size: 12px;
+  color: #8e98a9;
+  background: #f8f9fb;
+  border-bottom: 1px solid #e8ecf1;
+  flex-shrink: 0;
+}
+
+.kbs-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+  font-weight: 500;
+}
+
+.kbs-btn-close {
+  background: #f0f1f3;
+  color: #555;
+  border-color: #d0d5dd;
+}
+
+.kbs-btn-close:hover {
+  background: #e4e6ea;
+}
+
+.kbs-btn-reset {
+  background: transparent;
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+
+.kbs-btn-reset:hover {
+  background: #fef2f2;
+}
+
+.kbs-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.kbs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 24px;
+  transition: background 0.1s;
+}
+
+.kbs-row:hover {
+  background: #f5f7fa;
+}
+
+.kbs-row-custom {
+  background: rgba(79, 124, 255, 0.04);
+}
+
+.kbs-row-label {
+  font-size: 13px;
+  color: #333;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kbs-row-kbd {
+  flex-shrink: 0;
+  min-width: 130px;
+  padding: 4px 12px;
+  border: 1px dashed #c8cdd5;
+  border-radius: 6px;
+  background: #fafbfc;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  color: #555;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.kbs-row-kbd:hover {
+  border-color: #4f7cff;
+  background: #f0f4ff;
+  color: #4f7cff;
+}
+
+.kbs-row-recording {
+  border-color: #4f7cff;
+  border-style: solid;
+  background: #4f7cff;
+  color: #ffffff;
+  animation: kbs-pulse 1.2s ease-in-out infinite;
+  cursor: default;
+}
+
+@keyframes kbs-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.kbs-row-modified {
+  color: #4f7cff;
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+/* ── Dark theme overrides for Shortcut Editor ── */
+
+.tl-theme__dark .kbs-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.tl-theme__dark .kbs-panel {
+  background: #1e1e32;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.tl-theme__dark .kbs-header {
+  border-bottom-color: #2a2a44;
+}
+
+.tl-theme__dark .kbs-title {
+  color: #cdd6f4;
+}
+
+.tl-theme__dark .kbs-hint {
+  background: #161626;
+  border-bottom-color: #2a2a44;
+  color: #7e8aaa;
+}
+
+.tl-theme__dark .kbs-btn-close {
+  background: #2a2a3c;
+  color: #a0a8c0;
+  border-color: #3a3a5c;
+}
+
+.tl-theme__dark .kbs-btn-close:hover {
+  background: #353555;
+}
+
+.tl-theme__dark .kbs-btn-reset {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+.tl-theme__dark .kbs-btn-reset:hover {
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.tl-theme__dark .kbs-row:hover {
+  background: #222238;
+}
+
+.tl-theme__dark .kbs-row-custom {
+  background: rgba(108, 140, 255, 0.06);
+}
+
+.tl-theme__dark .kbs-row-label {
+  color: #cdd6f4;
+}
+
+.tl-theme__dark .kbs-row-kbd {
+  background: #12121e;
+  border-color: #3a3a5c;
+  color: #a0a8c0;
+}
+
+.tl-theme__dark .kbs-row-kbd:hover {
+  border-color: #6c8cff;
+  background: #1a1a30;
+  color: #6c8cff;
+}
+
+.tl-theme__dark .kbs-row-recording {
+  border-color: #6c8cff;
+  background: #6c8cff;
+  color: #ffffff;
+}
+
+.tl-theme__dark .kbs-row-modified {
+  color: #6c8cff;
+}
+
+/* ── 隐藏 tldraw 选中时的角方块（tl-corner-handle 纯视觉，pointer-events:none，
+      不影响 resize 功能 — 交互走透明的 tl-resize-handle 命中区域） ── */
+
+.tl-corner-handle {
+  display: none !important;
+}
+
+
+/* ── 注意力模式 v3：空间地图布局 ───────────────── */
+
+.attention-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  overflow: hidden;
+  /* v6：背景完全透明。四周是"真实画布框"——必须透出 tldraw canvas 才能
+     拖拽/编辑/连线跟随；非关联框已由 enterAttentionLayout 淡化为远景。
+     只有中央放大镜浮窗本体自带不透明卡片。 */
+  background: transparent;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  /* 关键：整层不拦截指针事件，透传给 tldraw（四周真框可拖/缩放/编辑），
+     只有中央放大镜本体 pointer-events:auto 接管交互 */
+  pointer-events: none;
+}
+
+.attention-overlay-dark {
+  background: transparent;
+}
+
+/* ── 注意力模式激活时，隐藏 tldraw 自带 UI 与自定义工具栏 ──
+   只隐藏 tldraw 的浮层（顶部菜单、底部工具栏、右侧样式/缩放、水印），
+   画布 canvas 保留（四周框可拖/缩放）。 */
+.app-root.attention-active {
+  /* 隐藏 tldraw 顶部/侧边 UI 容器 */
+  .tlui-layout__top,
+  .tlui-style-panel,
+  .tlui-zoom-menu,
+  .tlui-minimap,
+  .tlui-navigation-panel,
+  .tlui-page-menu,
+  .tlui-people-menu,
+  .tlui-actions-menu,
+  .tlui-helper-buttons,
+  .tlui-help-menu,
+  .tlui-toolbar,
+  .tlui-contextual-toolbar,
+  .tlui-select-toolbar,
+  .tlui-menu-zone {
+    display: none !important;
+  }
+  /* 隐藏 tldraw 水印 */
+  .tl-watermark {
+    display: none !important;
+  }
+  /* 隐藏自定义工具栏 */
+  .custom-toolbar {
+    display: none !important;
+  }
+}
+
+/* 中央放大镜浮窗层：层本身不拦截（pointer-events:none），透镜本体可交互 */
+.attn-lens-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 20px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.attn-lens {
+  position: relative;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.attn-lens-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 12px;
+  border: 1px solid #d0d5dd;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.attention-overlay-dark .attn-lens-body {
+  border-color: #3a3a5c;
+}
+
+.attn-lens-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 24px 32px;
+}
+
+.attn-lens-scale {
+  transform-origin: top left;
+  transition: none;
+}
+
+.attn-lens-content {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.attention-center-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 28px;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.attention-overlay-dark .attention-center-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.attn-header-title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.attn-header-hint {
+  font-size: 12px;
+  opacity: 0.5;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.attn-header-btn {
+  flex-shrink: 0;
+  font-size: 12px;
+  border: 1px solid #7c4dff;
+  color: #7c4dff;
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.attn-header-btn:hover {
+  background: rgba(124, 77, 255, 0.1);
+}
+
+.attn-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  border: 1px solid #7c4dff;
+  border-radius: 5px;
+  outline: none;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 0 8px;
+  color: inherit;
+  background: rgba(124, 77, 255, 0.06);
+}
+
+/* 边缘拉出手柄 */
+.attn-pull-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid #7c4dff;
+  cursor: grab;
+  z-index: 20;
+  box-shadow: 0 1px 4px rgba(124, 77, 255, 0.35);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.attn-pull-handle::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1.5px solid #7c4dff;
+  border-radius: 50%;
+  opacity: 0.4;
+}
+
+.attn-pull-handle:hover {
+  background: rgba(124, 77, 255, 0.1);
+}
+
+.attn-pull-handle-active {
+  background: rgba(124, 77, 255, 0.2);
+}
+
+.attn-pull-handle-bottom {
+  bottom: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.attn-pull-handle-right {
+  right: -11px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* 轻提示 */
+.attn-toast {
+  position: fixed;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 30, 46, 0.92);
+  color: #e8e6f5;
+  font-size: 13px;
+  padding: 8px 18px;
+  border-radius: 20px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+  z-index: 950;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: attn-toast-in 0.2s ease;
+}
+
+/* 编辑让位提示：某张画布卡正在展开编辑时，放大镜隐藏，顶部轻提示 */
+.attn-edit-hint {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(124, 77, 255, 0.14);
+  border: 1px solid rgba(124, 77, 255, 0.4);
+  color: #6b3ee0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 16px;
+  pointer-events: none;
+  z-index: 960;
+  white-space: nowrap;
+}
+
+.attention-overlay-dark .attn-edit-hint {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: rgba(167, 139, 250, 0.45);
+  color: #c4b5fd;
+}
+
+/* 框选矩形：注意力模式下空白左键拖出，与之相交的四周名片即时被选中（可多选）
+   挂在 body 上（低于 attention-overlay 的 900，避免盖住中央放大镜） */
+.attn-marquee {
+  position: fixed;
+  z-index: 890;
+  pointer-events: none;
+  border: 1px solid rgba(124, 77, 255, 0.85);
+  background: rgba(124, 77, 255, 0.12);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+/* 回正按钮：一键恢复整齐环绕（拖散后/平移乱后使用） */
+.attn-recenter-btn {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 960;
+  pointer-events: auto;
+  background: #ffffff;
+  color: #5b21b6;
+  border: 1px solid rgba(124, 77, 255, 0.4);
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
+  transition: background 0.12s, transform 0.12s;
+}
+
+.attn-recenter-btn:hover {
+  background: #f3eefe;
+  transform: translateY(-1px);
+}
+
+.attention-overlay-dark .attn-recenter-btn {
+  background: #2b2b40;
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.5);
+}
+
+.attention-overlay-dark .attn-recenter-btn:hover {
+  background: #34344d;
+}
+
+@keyframes attn-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── DSH 会话线程（对话卡里的对话区） ── */
+.jiashi-session-thread {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #d0d5dd;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jiashi-session-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #667085;
+}
+.jiashi-session-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #12b76a;
+  flex: none;
+}
+.jiashi-session-state {
+  margin-left: auto;
+  font-size: 11px;
+  color: #98a2b3;
+}
+.jiashi-session-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.jiashi-msg {
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 92%;
+}
+.jiashi-msg-user {
+  align-self: flex-end;
+  background: #e8f0ff;
+  color: #1d2939;
+}
+.jiashi-msg-assistant {
+  align-self: flex-start;
+  background: #f4f4f5;
+  color: #1d2939;
+}
+.jiashi-session-empty,
+.jiashi-session-loading {
+  font-size: 12px;
+  color: #98a2b3;
+  font-style: italic;
+}
+.jiashi-session-error {
+  font-size: 12px;
+  color: #d92d20;
+}
+.tl-theme__dark .jiashi-session-thread {
+  border-top-color: #3a3a3a;
+}
+.tl-theme__dark .jiashi-msg-user {
+  background: #1f2a44;
+  color: #e4e7ec;
+}
+.tl-theme__dark .jiashi-msg-assistant {
+  background: #2b2b2b;
+  color: #e4e7ec;
+}
+.tl-theme__dark .jiashi-session-head {
+  color: #98a2b3;
+}
+
+/* ── 会话线程：范围/打开/拆分/流式 ── */
+.jiashi-session-range {
+  font-size: 11px;
+  color: #98a2b3;
+}
+.jiashi-session-open {
+  margin-left: 6px;
+  border: none;
+  background: transparent;
+  color: #4d6bfe;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.jiashi-session-open:hover {
+  text-decoration: underline;
+}
+.jiashi-session-dot[data-running='1'] {
+  background: #f79009;
+}
+.jiashi-msg-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 92%;
+}
+.jiashi-wrap-user {
+  align-self: flex-end;
+}
+.jiashi-wrap-assistant {
+  align-self: flex-start;
+}
+.jiashi-msg-wrap > .jiashi-msg {
+  max-width: 100%;
+  align-self: stretch;
+}
+.jiashi-msg-split {
+  position: absolute;
+  right: -62px;
+  top: 2px;
+  opacity: 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475467;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 1px 6px;
+  cursor: pointer;
+  transition: opacity 0.12s;
+  white-space: nowrap;
+}
+.jiashi-msg-wrap:hover .jiashi-msg-split {
+  opacity: 1;
+}
+.jiashi-msg-split:hover {
+  border-color: #4d6bfe;
+  color: #4d6bfe;
+}
+.jiashi-msg-live {
+  opacity: 0.9;
+}
+.jiashi-caret {
+  animation: jiashi-blink 1s steps(2, start) infinite;
+}
+@keyframes jiashi-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.tl-theme__dark .jiashi-msg-split {
+  background: #262626;
+  border-color: #3a3a3a;
+  color: #d0d5dd;
+}
+
+/* ── 合并分段按钮 ── */
+.jiashi-session-merge {
+  margin-left: 6px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: transparent;
+  color: #475467;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.jiashi-session-merge:hover {
+  border-color: #4d6bfe;
+  color: #4d6bfe;
+}
+.tl-theme__dark .jiashi-session-merge {
+  border-color: #3a3a3a;
+  color: #d0d5dd;
+}

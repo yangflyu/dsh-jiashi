@@ -31,6 +31,67 @@ const BASE = `${ROUTE_PATH}/`
 const LOG_DIR = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'jiashi')
 const LOG_FILE = join(LOG_DIR, 'board.log')
 const LOG_PATH = `${BASE}api/log`
+const CREATE_PATH = `${BASE}api/session/create`
+
+/** Host 侧 sessionController 引用（由 apply 里的 inject 填充）。 */
+let sessionController
+
+/** 读一个 JSON 请求体（上限 64KB）。 */
+async function readBody(req) {
+  let body = ''
+  for await (const chunk of req) {
+    body += chunk
+    if (body.length > 65536) {
+      req.destroy()
+      return ''
+    }
+  }
+  return body
+}
+
+function writeJson(res, payload) {
+  res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+  res.end(JSON.stringify(payload))
+}
+
+/**
+ * 建会话：客户端画布通过这个同源路由请求，宿主直接调 sessionController.create。
+ * 不依赖客户端 Remote 服务的 inject，也不会弹任何选择框。
+ */
+async function handleCreateSession(req, res) {
+  if (req.method !== 'POST') {
+    res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('method not allowed')
+    return
+  }
+  let request = {}
+  try {
+    const body = await readBody(req)
+    request = body === '' ? {} : JSON.parse(body)
+  } catch {
+    request = {}
+  }
+  try {
+    if (sessionController === undefined || typeof sessionController.create !== 'function') {
+      throw new Error('sessionController unavailable')
+    }
+    const value = await sessionController.create({
+      ...(typeof request.workspaceId === 'string' && request.workspaceId !== ''
+        ? { workspaceId: request.workspaceId }
+        : {}),
+      ...(typeof request.cwd === 'string' && request.cwd !== '' ? { cwd: request.cwd } : {}),
+    })
+    writeJson(res, { ok: true, sessionId: value?.sessionId ?? null })
+  } catch (error) {
+    writeJson(res, {
+      ok: false,
+      error: {
+        code: String(error?.code ?? 'session/create-failed'),
+        message: String(error?.message ?? error),
+      },
+    })
+  }
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -122,6 +183,10 @@ async function serve(req, res) {
       await handleLog(req, res)
       return
     }
+    if (pathname === CREATE_PATH) {
+      await handleCreateSession(req, res)
+      return
+    }
     let rel = pathname === ROUTE_PATH
       ? ''
       : pathname.startsWith(BASE) ? pathname.slice(BASE.length) : ''
@@ -141,6 +206,17 @@ async function serve(req, res) {
 }
 
 export function apply(ctx) {
+  // 捕获 sessionController：画布的"新建会话"走本插件的同源路由，
+  // 由宿主直接调 create，避开客户端 Remote 的 inject 限制。
+  ctx.effect(
+    () => ctx.inject(['sessionController'], (injected) => {
+      sessionController = injected.sessionController
+      return () => {
+        sessionController = undefined
+      }
+    }),
+    'jiashi-web: session controller',
+  )
   ctx.effect(
     () => ctx.webServer.register({ kind: 'prefix', path: ROUTE_PATH, handler: serve }),
     'jiashi-web: static route',

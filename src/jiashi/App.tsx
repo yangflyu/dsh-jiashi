@@ -1,0 +1,633 @@
+import { Tldraw, useEditor, createShapeId, Editor, useActions, useTools, TLUiEventSource, TLShapeId } from 'tldraw'
+import 'tldraw/tldraw.css'
+import { TextBlockShapeUtil } from './shapes/TextBlockShapeUtil'
+import LinearView from './components/LinearView'
+import AISettingsPanel from './components/AISettingsPanel'
+import { KeyboardInterceptor } from './keyboard/KeyboardInterceptor'
+import { ShortcutEditor } from './keyboard/ShortcutEditor'
+import {
+  AttentionModeOverlay,
+  enterAttentionLayout,
+  exitAttentionLayout,
+  getAttnZoomCap,
+  AttnLayoutSnapshot,
+} from './components/AttentionMode'
+import { injectDemoShapes } from './demo'
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { initStore } from './ai/conversation'
+import { createDshSessionId, sessionLog } from './session/bridge'
+
+const customShapeUtils = [TextBlockShapeUtil]
+
+type AppMode = 'canvas' | 'linear'
+
+/**
+ * Toolbar — overlays on top of tldraw canvas.
+ * Only rendered in canvas mode. In linear mode, LinearView has its own bar.
+ */
+function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard }: {
+  onToggleMode: () => void
+  onOpenSettings: () => void
+  onOpenShortcuts: () => void
+  onToggleAttention: () => void
+  attentionActive: boolean
+  onCreateSessionCard: () => void
+}) {
+  const editor = useEditor()
+
+  const addTextBlock = useCallback(() => {
+    const id = createShapeId()
+    const viewport = editor.getViewportScreenBounds()
+    const cx = viewport.w / 2 + (Math.random() - 0.5) * 200
+    const cy = viewport.h / 2 + (Math.random() - 0.5) * 200
+    const point = editor.screenToPage({ x: cx, y: cy })
+    editor.createShape({ id, type: 'text-block', x: point.x, y: point.y })
+    editor.select(id)
+  }, [editor])
+
+  const activateArrow = useCallback(() => {
+    editor.setCurrentTool('arrow')
+  }, [editor])
+
+  const activateSelect = useCallback(() => {
+    editor.setCurrentTool('select')
+  }, [editor])
+
+  return (
+    <div className="custom-toolbar">
+      {/* Select tool */}
+      <button className="toolbar-btn" onClick={activateSelect} title="选择工具 (V)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+        </svg>
+        <span className="toolbar-label">选择</span>
+      </button>
+
+      {/* Add text block */}
+      <button className="toolbar-btn" onClick={addTextBlock} title="新建文本方框">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+          <line x1="8" y1="9" x2="16" y2="9" />
+          <line x1="8" y1="13" x2="13" y2="13" />
+          <line x1="8" y1="17" x2="11" y2="17" />
+        </svg>
+        <span className="toolbar-label">文本方框</span>
+      </button>
+
+      {/* Arrow tool */}
+      <button className="toolbar-btn" onClick={activateArrow} title="箭头连线工具">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="5" y1="19" x2="19" y2="5" />
+          <polyline points="12 5 19 5 19 12" />
+        </svg>
+        <span className="toolbar-label">箭头连线</span>
+      </button>
+
+      {/* DSH 对话卡：文本方框 + 绑定一条真实会话 */}
+      <button className="toolbar-btn toolbar-btn-accent" onClick={onCreateSessionCard} title="新建对话卡（绑定一条 DSH 会话）">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6a8 8 0 0 1 8-8h2a8 8 0 0 1 8 3z" />
+          <line x1="9" y1="11" x2="15" y2="11" />
+          <line x1="9" y1="15" x2="13" y2="15" />
+        </svg>
+        <span className="toolbar-label">对话卡</span>
+      </button>
+
+      {/* Divider */}
+      <div className="toolbar-divider" />
+
+      {/* Attention / focus mode */}
+      <button
+        className="toolbar-btn"
+        onClick={onToggleAttention}
+        title="注意力模式（Alt+T，先选中一个文本方框）"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3" strokeLinecap="round" />
+          <circle cx="12" cy="12" r="8" strokeDasharray="2 3" />
+        </svg>
+        <span className="toolbar-label">{attentionActive ? '退出专注' : '专注'}</span>
+      </button>
+
+      {/* Mode toggle: canvas → linear */}
+      <button className="toolbar-btn toolbar-btn-accent" onClick={onToggleMode} title="切换到线性视图">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="8" y1="6" x2="21" y2="6" />
+          <line x1="8" y1="12" x2="21" y2="12" />
+          <line x1="8" y1="18" x2="21" y2="18" />
+          <line x1="3" y1="6" x2="3.01" y2="6" />
+          <line x1="3" y1="12" x2="3.01" y2="12" />
+          <line x1="3" y1="18" x2="3.01" y2="18" />
+        </svg>
+        <span className="toolbar-label">线性视图</span>
+      </button>
+
+      {/* Settings */}
+      <button className="toolbar-btn toolbar-btn-settings" onClick={onOpenSettings} title="AI 设置">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span className="toolbar-label">设置</span>
+      </button>
+
+      {/* Keyboard shortcuts */}
+      <button
+        className="toolbar-btn"
+        onClick={onOpenShortcuts}
+        title="自定义快捷键"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="2" y="4" width="20" height="16" rx="2" />
+          <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M16 12h.01M6 16h.01M10 16h.01M14 16h.01" />
+        </svg>
+        <span className="toolbar-label">快捷键</span>
+      </button>
+    </div>
+  )
+}
+
+// ─── App root ─────────────────────────────────────────────────────────
+
+/**
+ * Global wheel interceptor.
+ *  - 注意力模式下：Ctrl+滚轮 → 以焦点框为中心缩放（保持焦点居中于放大镜下），
+ *    并限制 zoom ≤ 焦点屏宽上限；普通滚轮仍被吞掉（防画布滚动/页面缩放）。
+ *  - 普通模式：Ctrl+滚轮放行给 tldraw（画布缩放）；普通滚轮吞掉。
+ */
+function WheelInterceptor({
+  editor,
+  attentionActive,
+  attentionFocusId,
+  attnZoomCap,
+}: {
+  editor: Editor
+  attentionActive: boolean
+  attentionFocusId: string | null
+  attnZoomCap: number
+}) {
+  useEffect(() => {
+    const container = editor.getContainer()
+    const handler = (e: WheelEvent) => {
+      const target = e.target as HTMLElement
+      // 文本块内部滚轮 → TextBlockContent 原生处理（滚动内容）
+      if (target.closest('.textblock-content')) return
+      // 注意力模式下：Ctrl+滚轮 = 以焦点为中心的缩放（中央不动、四周整体缩放）
+      if (attentionActive && (e.ctrlKey || e.metaKey)) {
+        if (attentionFocusId) {
+          const fb = editor.getShapePageBounds(attentionFocusId as TLShapeId)
+          if (fb) {
+            e.preventDefault()
+            e.stopPropagation()
+            const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12
+            const cam = editor.getCamera()
+            const next = Math.max(0.12, Math.min(attnZoomCap, cam.z * factor))
+            editor.zoomToBounds(fb, { targetZoom: next, inset: 0 })
+          }
+        }
+        return
+      }
+      // Ctrl+wheel 普通模式 → allow tldraw to zoom
+      if (e.ctrlKey || e.metaKey) return
+      // Plain wheel outside text blocks: kill the event before tldraw ever sees it
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    // 全局门：只要 Ctrl/Cmd+滚轮，就先阻止浏览器默认的"页面缩放"
+    //（Page Zoom 会把整个页面/工具栏一起放大）。仅 preventDefault，不阻断
+    // 事件传播，让 tldraw 的 wheel handler 仍能收到并正常缩放画布。
+    const blockBrowserZoom = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) e.preventDefault()
+    }
+    // capture:true is critical — our handler fires BEFORE tldraw's internal
+    // wheel handler, so we can intercept and stop the event at the gate.
+    container.addEventListener('wheel', handler, { capture: true, passive: false })
+    // 挂在 document 上：覆盖页面任意位置（包括 tldraw 容器外），防止漏到浏览器。
+    document.addEventListener('wheel', blockBrowserZoom, { capture: true, passive: false })
+    return () => {
+      container.removeEventListener('wheel', handler, { capture: true })
+      document.removeEventListener('wheel', blockBrowserZoom, { capture: true })
+    }
+  }, [editor, attentionActive, attentionFocusId, attnZoomCap])
+  return null
+}
+
+/**
+ * 注意力模式下的指针拦截（框选多选）：
+ *  - 空白直接左键拖：拉出矩形**框选**——与矩形相交的四周关联名片被选中（多选）；
+ *    按住 Shift 拖 = 在已选基础上追加。命中范围只含"名片态"的四周关联框，
+ *    淡化远景框与隐藏的焦点框不参与。
+ *  - 空白单击（未拖动）：取消选择。
+ *  - 空格+拖 / 中键拖：放行给 tldraw 原生 pan（左键拖已让位给框选）。
+ *  - 点在卡片 / 放大镜 / 回正按钮上：放行（选中、拖拽整组、双击编辑）。
+ *  焦点真实框由 AttentionModeOverlay 实时钉屏，四周卡随相机自由移动。
+ */
+function AttentionPanInterceptor({
+  editor,
+  attentionActive,
+}: {
+  editor: Editor
+  attentionActive: boolean
+}) {
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  useEffect(() => {
+    if (!attentionActive) return
+    const container = editor.getContainer()
+    const spaceRef = { down: false }
+    let start: { x: number; y: number } | null = null
+    let baseSelection: TLShapeId[] = []
+    let moved = false
+    let raf = 0
+    let pending: PointerEvent | null = null
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') spaceRef.down = true
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') spaceRef.down = false
+    }
+
+    /** 屏幕矩形 → 与之相交的"四周名片" id 列表（相交即命中，不要求完全包含） */
+    const hitTest = (r: { x: number; y: number; w: number; h: number }): TLShapeId[] => {
+      const p1 = editor.screenToPage({ x: r.x, y: r.y })
+      const p2 = editor.screenToPage({ x: r.x + r.w, y: r.y + r.h })
+      const minX = Math.min(p1.x, p2.x)
+      const maxX = Math.max(p1.x, p2.x)
+      const minY = Math.min(p1.y, p2.y)
+      const maxY = Math.max(p1.y, p2.y)
+      const ids: TLShapeId[] = []
+      for (const s of editor.getCurrentPageShapes()) {
+        if (s.type !== 'text-block') continue
+        // 只认名片态（有 attn 标记）：远景淡化框、隐藏的焦点框都不参与框选
+        if (!(s.props as { attn?: unknown }).attn) continue
+        const b = editor.getShapePageBounds(s.id)
+        if (!b) continue
+        if (b.maxX < minX || b.minX > maxX || b.maxY < minY || b.minY > maxY) continue
+        ids.push(s.id)
+      }
+      return ids
+    }
+
+    const applyMarquee = (e: PointerEvent) => {
+      if (!start) return
+      const rect = {
+        x: Math.min(start.x, e.clientX),
+        y: Math.min(start.y, e.clientY),
+        w: Math.abs(e.clientX - start.x),
+        h: Math.abs(e.clientY - start.y),
+      }
+      setMarquee(rect)
+      const hits = hitTest(rect)
+      const ids = baseSelection.length ? [...new Set([...baseSelection, ...hits])] : hits
+      editor.setSelectedShapes(ids)
+    }
+
+    const onMove = (e: PointerEvent) => {
+      if (!start) return
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 3) moved = true
+      if (!moved) return
+      e.preventDefault()
+      e.stopPropagation()
+      pending = e
+      if (!raf) {
+        raf = window.requestAnimationFrame(() => {
+          raf = 0
+          if (pending) applyMarquee(pending)
+        })
+      }
+    }
+    const onUp = () => {
+      // 单击空白（未拖动、非 Shift 追加）→ 取消选择
+      // 注意：这里必须用 setSelectedShapes([])，editor.deselect() 在本项目上下文里是 no-op
+      //（实测：3 个选中 → deselect() 后仍为 3；setSelectedShapes([]) 正常清空）
+      if (!moved && baseSelection.length === 0) editor.setSelectedShapes([])
+      start = null
+      baseSelection = []
+      moved = false
+      pending = null
+      setMarquee(null)
+      if (raf) { window.cancelAnimationFrame(raf); raf = 0 }
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+
+    // document capture：任何 pointerdown 先经此处 → 再决定是否吞掉
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (spaceRef.down) return // 空格拖 → 交给 tldraw 原生 pan
+      // 点在卡片/文本框/箭头/浮窗上 → 放行（选中/拖拽/编辑）
+      const t = e.target as HTMLElement | null
+      if (t && t.closest('.tl-shape, .attn-lens, .attn-recenter-btn')) return
+      const rect = container.getBoundingClientRect()
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return
+      // 空白拖 → 拉框多选（Shift = 追加选择）
+      start = { x: e.clientX, y: e.clientY }
+      baseSelection = e.shiftKey ? [...editor.getSelectedShapeIds()] : []
+      moved = false
+      window.addEventListener('pointermove', onMove, { passive: false })
+      window.addEventListener('pointerup', onUp)
+      // 吞掉：tldraw 原生框选会连远景淡化框一起选中，命中范围由我们控制
+      e.preventDefault()
+      e.stopPropagation()
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, { capture: true })
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('keyup', onKeyUp)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, { capture: true })
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [editor, attentionActive])
+
+  if (!marquee) return null
+  // 挂到 body：避开 tldraw 容器内部的层叠/裁剪，保证框选矩形永远可见
+  return createPortal(
+    <div
+      className="attn-marquee"
+      style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
+    />,
+    document.body,
+  )
+}
+
+export default function App() {
+  const [mode, setMode] = useState<AppMode>('canvas')
+  const [showSettings, setShowSettings] = useState(false)
+  const [showShortcutEditor, setShowShortcutEditor] = useState(false)
+  const [editor, setEditor] = useState<Editor | null>(null)
+
+  // ── 注意力模式状态 ──
+  const [attentionActive, setAttentionActive] = useState(false)
+  const [attentionFocusedId, setAttentionFocusedId] = useState<string | null>(null)
+  // 布局快照：进入时保存的原位置/透明度/相机，退出时还原
+  const attnSnapshotRef = useRef<AttnLayoutSnapshot | null>(null)
+
+  // Initialize database and conversation store on mount
+  useEffect(() => { initStore() }, [])
+
+  // ── 进入 / 退出注意力布局（统一走这里，保证 snapshot 一致） ──
+  const enterAttention = useCallback((editor: Editor, shapeId: string) => {
+    // 若已有快照先还原（避免残留）
+    if (attnSnapshotRef.current) {
+      exitAttentionLayout(editor, attnSnapshotRef.current)
+      attnSnapshotRef.current = null
+    }
+    if (editor.getEditingShapeId()) editor.setEditingShape(null)
+    attnSnapshotRef.current = enterAttentionLayout(editor, shapeId)
+    setAttentionActive(true)
+    setAttentionFocusedId(shapeId)
+  }, [])
+
+  const exitAttention = useCallback((editor: Editor) => {
+    // 若正处在"名片展开编辑"状态，先退出编辑（触发 onEditEnd 缩回）
+    if (editor.getEditingShapeId()) editor.setEditingShape(null)
+    if (attnSnapshotRef.current) {
+      exitAttentionLayout(editor, attnSnapshotRef.current)
+      attnSnapshotRef.current = null
+    }
+    setAttentionActive(false)
+    setAttentionFocusedId(null)
+  }, [])
+
+  // ── 安全兜底：active 变 false 而快照仍残留 → 还原（覆盖组件卸载等路径） ──
+  useEffect(() => {
+    if (attentionActive || !editor || !attnSnapshotRef.current) return
+    exitAttentionLayout(editor, attnSnapshotRef.current)
+    attnSnapshotRef.current = null
+  }, [attentionActive, editor])
+
+  // ── 注意力模式快捷键：Alt+T 进入/切换聚焦，Esc 退出 ──
+  useEffect(() => {
+    if (!editor) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault()
+        e.stopPropagation()
+        const only = editor.getOnlySelectedShapeId()
+        const shape = only ? editor.getShape(only) : null
+        const isTextBlock = !!shape && shape.type === 'text-block'
+        ;(window as unknown as { __jiashiDebugLog?: (event: string, data: unknown) => void }).__jiashiDebugLog?.(
+          'attention.alt-t',
+          { only: only ?? null, isTextBlock, attentionActive },
+        )
+        if (attentionActive) {
+          if (isTextBlock && shape.id !== (attentionFocusedId as TLShapeId)) {
+            // 切到新框：先退出旧布局还原，再进入新布局
+            exitAttention(editor)
+            enterAttention(editor, shape.id as string)
+          } else {
+            // 同一框或无选中 → 退出
+            exitAttention(editor)
+          }
+        } else {
+          if (isTextBlock) enterAttention(editor, shape.id as string)
+        }
+      } else if (e.key === 'Escape' && attentionActive) {
+        // 焦点在块编辑器的 textarea 里 → 这一下 Esc 归它（退回渲染态），
+        // 本处理器挂在 window capture 阶段、比 textarea 先跑，不拦就会一路退到模式外
+        const t = e.target as HTMLElement | null
+        if (t?.closest?.('.tb-md-textarea')) return
+        e.preventDefault()
+        e.stopPropagation()
+        // 分级退出：正在编辑某张画布卡片（名片展开编辑）→ 先只退出编辑
+        //（onEditEnd 自动把卡片缩回缩略）；没有编辑态才真正退出注意力模式。
+        const editingId = editor.getEditingShapeId()
+        if (editingId) {
+          editor.setEditingShape(null)
+          return
+        }
+        exitAttention(editor)
+      }
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [editor, attentionActive, attentionFocusedId, enterAttention, exitAttention])
+
+  const toggleMode = useCallback(() => {
+    setMode(prev => (prev === 'canvas' ? 'linear' : 'canvas'))
+  }, [])
+
+  const openSettings = useCallback(() => setShowSettings(true), [])
+  const closeSettings = useCallback(() => setShowSettings(false), [])
+  const openShortcuts = useCallback(() => setShowShortcutEditor(true), [])
+  const closeShortcuts = useCallback(() => setShowShortcutEditor(false), [])
+
+  // 工具栏上的"专注/注意力模式"入口：Alt+T 之外再给一个可见按钮。
+  const toggleAttentionUI = useCallback(() => {
+    if (!editor) return
+    if (attentionActive) {
+      exitAttention(editor)
+      return
+    }
+    const onlyId = editor.getOnlySelectedShapeId()
+    const selected = onlyId ? editor.getShape(onlyId) : null
+    let target = selected && selected.type === 'text-block' ? selected.id : null
+    if (!target) {
+      const first = editor.getCurrentPageShapes().find((shape) => shape.type === 'text-block')
+      if (first) target = first.id
+    }
+    if (!target) {
+      // 画布上还没有文本方框：直接建一个再进入专注，避免按钮点了没反应。
+      const bounds = editor.getViewportPageBounds()
+      const created = editor.createShape({
+        type: 'text-block',
+        x: bounds.x + bounds.w / 2 - 220,
+        y: bounds.y + bounds.h / 2 - 140,
+      })
+      target = created.id
+    }
+    if (target) enterAttention(editor, target)
+  }, [editor, attentionActive, enterAttention, exitAttention])
+
+  // 新建"对话卡"：建一条 DSH 会话，再放一个绑定它的文本块。
+  const createSessionCard = useCallback(async () => {
+    if (!editor) return
+    try {
+      const sessionId = await createDshSessionId()
+      const bounds = editor.getViewportPageBounds()
+      const shape = editor.createShape({
+        type: 'text-block',
+        x: bounds.x + bounds.w / 2 - 220,
+        y: bounds.y + bounds.h / 2 - 140,
+        props: { conversationId: sessionId },
+      })
+      editor.select(shape.id)
+      sessionLog('session-card.add', { sessionId })
+    } catch (error) {
+      sessionLog('session-card.create-failed', { error: String((error as Error)?.message ?? error) })
+    }
+  }, [editor])
+
+  // Build root class: adds `linear-mode-active` to hide tldraw canvas
+  // and save GPU/CPU when LinearView is covering it.
+  const rootClass =
+    mode === 'linear'
+      ? 'app-root linear-mode-active'
+      : attentionActive
+        ? 'app-root attention-active'
+        : 'app-root'
+
+  return (
+    <div className={rootClass}>
+      <Tldraw
+        shapeUtils={customShapeUtils}
+        // 持久化：切走画布面板 / 刷新页面后画布内容不丢（tldraw 本地同步，存在浏览器 origin 下）。
+        persistenceKey="dsh-jiashi-board-v1"
+        onMount={(editor) => {
+          setEditor(editor)
+          // 便于自动化验证/调试：暴露编辑器实例
+          if (typeof window !== 'undefined') {
+            ;(window as unknown as { __editor?: Editor }).__editor = editor
+          }
+          // ?demo=1 注入测试示例；&reset=1 或画布为空时执行（reset 会清空重建）
+          if (typeof window !== 'undefined') {
+            const qs = new URLSearchParams(window.location.search)
+            if (qs.has('demo')) {
+              const wantReset = qs.get('reset') === '1' || qs.get('demo') === 'reset'
+              if (wantReset || editor.getCurrentPageShapes().length === 0) {
+                if (wantReset) editor.deleteShapes(editor.getCurrentPageShapes())
+                injectDemoShapes(editor)
+              }
+            }
+          }
+        }}
+      >
+        {editor && (
+          <WheelInterceptor
+            editor={editor}
+            attentionActive={attentionActive}
+            attentionFocusId={attentionFocusedId}
+            attnZoomCap={attentionFocusedId && editor ? getAttnZoomCap(editor, attentionFocusedId) : 1}
+          />
+        )}
+        {editor && (
+          <AttentionPanInterceptor editor={editor} attentionActive={attentionActive} />
+        )}
+        <ShortcutBridge
+          showShortcutEditor={showShortcutEditor}
+          onCloseShortcuts={closeShortcuts}
+        />
+        {mode === 'canvas' && (
+          <CustomToolbar
+            onToggleMode={toggleMode}
+            onOpenSettings={openSettings}
+            onOpenShortcuts={openShortcuts}
+            onToggleAttention={toggleAttentionUI}
+            attentionActive={attentionActive}
+            onCreateSessionCard={createSessionCard}
+          />
+        )}
+        {mode === 'linear' && <LinearView onBackToCanvas={toggleMode} />}
+      </Tldraw>
+      {/* AI settings panel must be OUTSIDE Tldraw — tldraw's canvas overlay
+          layer has pointer-events: none which blocks any dialog inside it. */}
+      <AISettingsPanel open={showSettings} onClose={closeSettings} />
+      {/* 注意力模式 overlay — 同样放在 Tldraw 外部 */}
+      {attentionActive && editor && (
+        <AttentionModeOverlay
+          editor={editor}
+          focusedId={attentionFocusedId}
+        />
+      )}
+    </div>
+  )
+}
+
+function ShortcutBridge({
+  showShortcutEditor,
+  onCloseShortcuts,
+}: {
+  showShortcutEditor: boolean
+  onCloseShortcuts: () => void
+}) {
+  const actions = useActions()
+  const tools = useTools()
+  const editor = useEditor()
+
+  // Merge actions + tools into a single map of { id → { id, kbd, label, onSelect } }
+  const allActions = useMemo(() => {
+    const merged: Record<string, { id: string; kbd?: string; label?: string; onSelect: (source: TLUiEventSource) => void }> = {}
+
+    for (const [id, action] of Object.entries(actions)) {
+      if (action.kbd || action.label) {
+        merged[id] = {
+          id,
+          kbd: action.kbd,
+          label: typeof action.label === 'string' ? action.label : (action.label as any)?.['default'] ?? id,
+          onSelect: action.onSelect,
+        }
+      }
+    }
+
+    for (const [id, tool] of Object.entries(tools)) {
+      merged[id] = {
+        id,
+        kbd: tool.kbd,
+        label: tool.label || id,
+        onSelect: tool.onSelect,
+      }
+    }
+
+    return merged
+  }, [actions, tools])
+
+  return (
+    <>
+      <KeyboardInterceptor actions={allActions} />
+      <ShortcutEditor
+        open={showShortcutEditor}
+        onClose={onCloseShortcuts}
+        actions={allActions}
+        editor={editor}
+      />
+    </>
+  )
+}

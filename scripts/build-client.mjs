@@ -24,6 +24,46 @@ const outputFile = resolve(here, 'lib/client.js')
 
 await mkdir(resolve(here, 'lib'), { recursive: true })
 
+/** 依次替换（replace 的异步版），用于把 KaTeX 字体内联进 CSS 文本。 */
+async function replaceAsync(text, regex, replacer) {
+  const jobs = []
+  text.replace(regex, (match, ...groups) => {
+    jobs.push(Promise.resolve(replacer(match, ...groups)))
+    return match
+  })
+  const values = await Promise.all(jobs)
+  let index = 0
+  return text.replace(regex, () => values[index++])
+}
+
+/**
+ * KaTeX 的 CSS 用相对 url(fonts/...) 引用字体；CSS 作为文本注入 <style> 后，
+ * 这些相对路径会解析到页面根而不是插件目录。构建时把 woff2 直接内联成 data URI。
+ */
+const katexInlineFontsPlugin = {
+  name: 'jiashi-katex-fonts',
+  setup(build) {
+    build.onLoad({ filter: /katex[\\/]dist[\\/]katex\.min\.css$/ }, async (args) => {
+      const css = await readFile(args.path, 'utf8')
+      const fontsDir = resolve(srcRoot, 'node_modules/katex/dist/fonts')
+      const contents = await replaceAsync(
+        css,
+        /url\((['"]?)fonts\/([^'")]+)\1\)/g,
+        async (match, _quote, file) => {
+          if (!file.endsWith('.woff2')) return match
+          try {
+            const bytes = await readFile(resolve(fontsDir, file))
+            return `url(data:font/woff2;base64,${bytes.toString('base64')})`
+          } catch {
+            return match
+          }
+        },
+      )
+      return { contents, loader: 'text' }
+    })
+  },
+}
+
 const result = await build({
   entryPoints: [entry],
   outfile: bundleFile,
@@ -33,6 +73,7 @@ const result = await build({
   target: 'es2020',
   minify: false, // 保留可读性，体积大一点但便于调试
   legalComments: 'none',
+  plugins: [katexInlineFontsPlugin],
   // 宿主提供 React；tldraw 与它的依赖全部打进产物。
   external: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'],
   // JSX 走自动运行时（react/jsx-runtime 由宿主提供）。
