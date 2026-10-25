@@ -562,6 +562,36 @@ export default function App() {
     return () => dispose()
   }, [editor])
 
+  // 诊断：任何位置按下 Ctrl/⌘ + \（或 Ctrl/⌘ + Enter）都记一条，用来判断
+  // 事件到底有没有到达渲染进程（板载日志 board.log 里看 splitkey.global）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const isCandidate =
+        e.code === 'Backslash' ||
+        e.code === 'IntlBackslash' ||
+        e.code === 'Enter' ||
+        e.key === '\\' ||
+        e.key === '、' ||
+        e.key === 'Process'
+      if (!isCandidate) return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      sessionLog('splitkey.global', {
+        code: e.code,
+        key: e.key,
+        ctrl: e.ctrlKey,
+        meta: e.metaKey,
+        target: target?.tagName,
+        editable:
+          target !== null &&
+          (target.isContentEditable || target.tagName === 'TEXTAREA' || target.tagName === 'INPUT'),
+        active: document.activeElement?.tagName,
+      })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
   // 清理空卡：删除"没有内容、也没有绑定会话"的普通文本方框（可撤销）。
   const cleanEmptyCards = useCallback(() => {
     if (!editor) return

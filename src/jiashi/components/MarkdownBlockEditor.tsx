@@ -32,6 +32,7 @@ import React, {
 import MarkdownPreview from './MarkdownPreview'
 import { splitMarkdownBlocks, joinMarkdownBlocks, resplitBlocks, type MdBlock } from '../md/blocks'
 import { clipboardToMarkdown } from '../md/clipboard'
+import { setActiveCardSplitHandler } from '../session/cardSplit'
 
 export interface BlockEditorHandle {
   /** 由父组件在外部改动文本后调用（如「选中文字拖出」的剪切语义），强制以新文本重建块 */
@@ -47,6 +48,12 @@ interface Props {
   /** 挂载后自动进入编辑（新建的空片段用，插进来自动可打字） */
   autoFocus?: boolean
   placeholder?: string
+  /**
+   * 提供后，Ctrl+\ 变成「把这张卡从光标处拆成两张卡」：
+   * 参数 offset 是光标在当前条目文本里的字符偏移。
+   * 不提供时（例如编辑 AI 回复条目）退回原来的"块内拆段"。
+   */
+  onSplitCard?: (offsetInValue: number) => void
 }
 
 let splitSeq = 0
@@ -65,9 +72,10 @@ function blockFontSize(text: string): React.CSSProperties | undefined {
   return { fontSize: HEADING_FONT_SIZE[m[1].length - 1] }
 }
 
-/** Ctrl/⌘ + \（中文输入法下 key 可能变成 '、'/'Process'，所以同时看物理键 code）。 */
+/** Ctrl/⌘ + \（中文输入法下 key 可能变成 '、'/'Process'，所以同时看物理键 code）；Ctrl/⌘ + Enter 是备用键。 */
 function isSplitShortcut(e: KeyboardEvent): boolean {
   if (!(e.ctrlKey || e.metaKey)) return false
+  if (e.code === 'Enter') return true
   return (
     e.code === 'Backslash' ||
     e.code === 'IntlBackslash' ||
@@ -94,6 +102,7 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
     onChange,
     autoFocus = false,
     placeholder = '点击输入…',
+    onSplitCard,
   }: Props,
   ref,
 ) {
@@ -246,6 +255,15 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
     debugLog('editor.split', { idx, mode, beforeLength: before.length, afterLength: after.length })
   }, [emit])
 
+  /** 把「拆卡」动作交给父组件（偏移量 = 当前块在整段文本里的起点 + 光标位置）。 */
+  const splitCardAtCursor = useCallback((idx: number, ta: HTMLTextAreaElement) => {
+    const block = blocksRef.current[idx]
+    if (block === undefined) return
+    const offset = block.start + ta.selectionStart
+    debugLog('card.split-key', { idx, offset })
+    onSplitCard?.(offset)
+  }, [onSplitCard])
+
   // 键盘必须用**原生监听**，不能只用 React 的 onKeyDown：
   // tldraw 把 keydown 挂在容器上（冒泡阶段），而它的 Escape 分支不受
   // 「输入框内禁用快捷键」保护 —— 无条件 editor.cancel()，会把整张卡片的编辑态一起退掉。
@@ -254,6 +272,7 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
   useEffect(() => {
     const ta = taRef.current
     if (!ta || editingIdx === null) return
+    debugLog('editor.edit-start', { idx: editingIdx, hasTextarea: true })
     const onNativeKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -261,13 +280,14 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
         exitEditing()
         return
       }
-      // Ctrl+\ 拆块 —— 用 e.code 物理键判断最可靠：
+      // Ctrl+\ 拆卡（编辑 AI 回复条目时退回块内拆段）—— 用 e.code 物理键判断最可靠：
       // 中文输入法下 e.key 可能变成 'Process'/'、'，导致判定失效
       if (isSplitShortcut(e)) {
         e.preventDefault()
         e.stopPropagation()
         debugLog('editor.key-target', { key: e.key, code: e.code })
-        splitAtCursor(editingIdx, ta)
+        if (onSplitCard !== undefined) splitCardAtCursor(editingIdx, ta)
+        else splitAtCursor(editingIdx, ta)
       }
     }
     ta.addEventListener('keydown', onNativeKeyDown)
@@ -282,21 +302,36 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
       debugLog('editor.key-capture', { key: e.key, code: e.code })
       e.preventDefault()
       e.stopPropagation()
-      splitAtCursor(editingIdx, active)
+      if (onSplitCard !== undefined) splitCardAtCursor(editingIdx, active)
+      else splitAtCursor(editingIdx, active)
     }
     window.addEventListener('keydown', onWindowCapture, true)
     return () => {
+      debugLog('editor.edit-end', { idx: editingIdx })
       ta.removeEventListener('keydown', onNativeKeyDown)
       window.removeEventListener('keydown', onWindowCapture, true)
     }
-  }, [editingIdx, exitEditing, splitAtCursor])
+  }, [editingIdx, exitEditing, splitAtCursor, splitCardAtCursor, onSplitCard])
+
+  // 给 DSH 快捷键命令用的"当前可拆卡"动作（原生快捷键通过 IPC 触发时也走这里）。
+  useEffect(() => {
+    if (editingIdx === null || onSplitCard === undefined) return
+    return setActiveCardSplitHandler(() => {
+      const ta = taRef.current
+      const block = blocksRef.current[editingIdx]
+      if (ta === null || block === undefined) return
+      const offset = block.start + ta.selectionStart
+      debugLog('card.split-shortcut', { idx: editingIdx, offset })
+      onSplitCard(offset)
+    })
+  }, [editingIdx, onSplitCard])
 
   return (
     <div className="tb-md-editor" ref={rootRef}>
       {blocks.map((b, i) => {
         if (editingIdx === i) {
           return (
-            <div className="tb-md-block" key={b.key}>
+            <div className="tb-md-block tb-md-block-editing" key={b.key}>
               <textarea
                 ref={taRef}
                 className="tb-md-textarea"
@@ -310,6 +345,32 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
                 onChange={(e) => updateBlock(i, e.target.value)}
                 onPaste={(e) => handlePaste(e, i)}
               />
+              {/* 鼠标兜底：键盘快捷键被外壳吞掉时也能拆 */}
+              <button
+                type="button"
+                className="tb-md-split-btn"
+                title={onSplitCard !== undefined ? '把这张卡从光标处拆成两张（Ctrl+Shift+\\）' : '在光标处拆块（Ctrl+\\）'}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const ta = taRef.current
+                  if (ta === null) return
+                  if (onSplitCard !== undefined) {
+                    const block = blocksRef.current[i]
+                    const offset = block === undefined ? ta.selectionStart : block.start + ta.selectionStart
+                    debugLog('card.split-btn', { idx: i, offset })
+                    onSplitCard(offset)
+                  } else {
+                    debugLog('editor.split-btn', { idx: i })
+                    splitAtCursor(i, ta)
+                  }
+                }}
+              >
+                {onSplitCard !== undefined ? '拆成新卡' : '拆'}
+              </button>
             </div>
           )
         }

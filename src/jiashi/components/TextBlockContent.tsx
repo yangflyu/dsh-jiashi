@@ -10,7 +10,7 @@ import {
 } from '../shapes/TextBlockShapeUtil'
 import AIInputBar from './AIInputBar'
 import SessionThread from '../session/SessionThread'
-import { SESSION_TAIL_SEQ, createDshSessionId, isDshSessionId, sessionLog } from '../session/bridge'
+import { SESSION_TAIL_SEQ, createDshSessionId, isDshSessionId, nextSeqAfter, sessionLog } from '../session/bridge'
 import MarkdownPreview from './MarkdownPreview'
 import MarkdownBlockEditor, { type BlockEditorHandle } from './MarkdownBlockEditor'
 import {
@@ -636,6 +636,88 @@ export default function TextBlockContent({
     })
     sessionLog('session.merge', { sessionId: dshSessionId, from: sessionFromSeq, into: prev.id })
   }, [editor, shape, dshSessionId, sessionFromSeq, sessionToSeq])
+
+  // 把这张卡从光标处拆成两张卡：后半段文字 + 后续条目移到右边的新卡，并连一条箭头。
+  // 对话卡拆出去的新卡继承同一会话，并从父卡结束位置之后续接。
+  const handleSplitCardAt = useCallback((itemId: string, offsetInItem: number) => {
+    const ed = editorRef.current
+    const cur = shapeRef.current
+    if (!ed || !cur) return
+    const list = itemsRef.current
+    const index = list.findIndex((item) => item.id === itemId)
+    if (index === -1) return
+    const item = list[index]
+    if (item.kind !== 'user') {
+      sessionLog('card.split-skip', { reason: 'not-user-item' })
+      return
+    }
+    const text = item.text
+    const cut = Math.max(0, Math.min(offsetInItem, text.length))
+    const before = text.slice(0, cut)
+    const after = text.slice(cut)
+    const makeItemId = () =>
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? `user-${crypto.randomUUID()}`
+        : `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const firstItems: MixedItem[] = [...list.slice(0, index), { ...item, text: before }]
+    const secondItems: MixedItem[] = [
+      { kind: 'user', id: makeItemId(), text: after },
+      ...list.slice(index + 1),
+    ]
+    const bounds = ed.getShapePageBounds(cur.id)
+    if (!bounds) return
+    const childId = createShapeId()
+    const arrowId = createShapeId()
+    const conv = cur.props.conversationId
+    const childProps: Record<string, unknown> = {
+      items: secondItems,
+      ...deriveTextBlockProps(secondItems),
+    }
+    if (conv !== undefined && conv !== '') {
+      childProps.conversationId = conv
+      const next = nextSeqAfter(cur.props.sessionToSeq)
+      if (next !== undefined) childProps.sessionFromSeq = next
+    }
+    ed.batch(() => {
+      ed.updateShape({
+        id: cur.id,
+        type: 'text-block',
+        props: { items: firstItems, ...deriveTextBlockProps(firstItems) },
+      })
+      ed.createShape({
+        id: childId,
+        type: 'text-block',
+        x: bounds.x + bounds.w + 100,
+        y: bounds.y,
+        props: childProps as never,
+      })
+      ed.createShape({ id: arrowId, type: 'arrow', x: 0, y: 0 })
+      ed.createBindings([
+        {
+          type: 'arrow',
+          fromId: arrowId,
+          toId: cur.id,
+          props: { terminal: 'start', isPrecise: false, normalizedAnchor: { x: 0.5, y: 0.5 } },
+        },
+        {
+          type: 'arrow',
+          fromId: arrowId,
+          toId: childId,
+          props: { terminal: 'end', isPrecise: false, normalizedAnchor: { x: 0.5, y: 0.5 } },
+        },
+      ])
+      ed.select(childId)
+    })
+    // 当前块编辑器还拿着旧文本，同步成前半段（并退出该块编辑）。
+    blockEditorsRef.current.get(itemId)?.replaceText(before)
+    sessionLog('card.split', {
+      from: cur.id,
+      to: childId,
+      itemId,
+      beforeLength: before.length,
+      afterLength: after.length,
+    })
+  }, [])
 
   // ── Pull-out drag state (选中文字拖出) ──
   const [isDraggingText, setIsDraggingText] = useState(false)
@@ -1457,6 +1539,7 @@ export default function TextBlockContent({
                         isDarkMode={isDarkMode}
                         autoFocus={item.id === pendingFocusItemId}
                         onChange={(next) => updateUserItemText(item.id, next)}
+                        onSplitCard={(offset) => handleSplitCardAt(item.id, offset)}
                       />
                     </div>
                     <SubBoxDragHandle

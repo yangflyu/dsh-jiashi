@@ -1830,3 +1830,36 @@
 .tl-theme__dark .jiashi-session-title {
   color: #d0d5dd;
 }
+
+/* ── 块编辑态：拆块按钮（快捷键被吞时的鼠标兜底） ── */
+.tb-md-block-editing {
+  position: relative;
+}
+.tb-md-split-btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  transform: translateY(-4px);
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  background: #fff;
+  color: #667085;
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.12s ease;
+}
+.tb-md-block-editing:hover .tb-md-split-btn,
+.tb-md-split-btn:hover {
+  opacity: 1;
+  color: #4f7cff;
+  border-color: #4f7cff;
+}
+.tl-theme__dark .tb-md-split-btn {
+  background: #1e1e2e;
+  border-color: #3a3a3c;
+  color: #d0d5dd;
+}

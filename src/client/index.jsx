@@ -4,6 +4,7 @@ import katexCss from 'katex/dist/katex.min.css'
 import appCss from '../jiashi/App.css'
 import App from '../jiashi/App'
 import { configureSessionRuntime } from '../jiashi/session/bridge'
+import { hasActiveCardSplit, runActiveCardSplit } from '../jiashi/session/cardSplit'
 import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 /**
@@ -19,10 +20,10 @@ import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.7.0-split-key'
+const MODULE_VERSION = '0.9.0-card-split'
 
-const zh = { 'panel.label': '画布' }
-const en = { 'panel.label': 'Canvas' }
+const zh = { 'panel.label': '画布', 'split.card': '把卡片从光标处拆成两张' }
+const en = { 'panel.label': 'Canvas', 'split.card': 'Split card at cursor' }
 
 /** 客户端诊断日志（/jiashi/api/log → $DSH_HOME/jiashi/board.log）。 */
 function boardLog(event, data) {
@@ -187,6 +188,49 @@ export function apply(ctx) {
         ),
       ),
     'jiashi: sidebar entry',
+  )
+
+  // 拆卡快捷键：走 DSH 的命令注册表（桌面端由原生键盘桥分发，
+  // 不依赖 DOM keydown，也就不会被已注册的 DSH 快捷键抢走）。
+  // 默认 Ctrl/⌘ + Shift + \\；用户也可以在 DSH「设置 → 快捷键」里改键。
+  // 用 ctx.inject 等 shortcuts 服务就绪，服务缺失/注册失败只丢快捷键、不阻断插件激活。
+  safeEffect(
+    () =>
+      ctx.inject(['shortcuts'], (injected) => {
+        try {
+          injected.effect(
+            () =>
+              injected.shortcuts.register({
+                id: 'jiashi.split-card',
+                label: () => t('split.card'),
+                aliases: ['split card', 'jiashi split', '拆卡'],
+                defaults: {
+                  'desktop:windows': { code: 'Backslash', modifiers: ['primary', 'shift'] },
+                  'desktop:macos': { code: 'Backslash', modifiers: ['primary', 'shift'] },
+                  'desktop:linux': { code: 'Backslash', modifiers: ['primary', 'shift'] },
+                  'web:windows': { code: 'Backslash', modifiers: ['primary', 'shift'] },
+                  'web:macos': { code: 'Backslash', modifiers: ['primary', 'shift'] },
+                },
+                regions: ['page', 'editable'],
+                modals: [],
+                resolve: () =>
+                  hasActiveCardSplit()
+                    ? {
+                        status: 'handled',
+                        run: () => {
+                          runActiveCardSplit()
+                        },
+                      }
+                    : { status: 'blocked', reason: '当前没有正在编辑的卡片' },
+              }),
+            'jiashi: split-card shortcut',
+          )
+          boardLog('shortcuts.registered', { id: 'jiashi.split-card' })
+        } catch (error) {
+          boardLog('activate.error', { step: 'shortcuts-register', error: String(error?.stack ?? error) })
+        }
+      }),
+    'jiashi: shortcuts',
   )
 }
 
