@@ -19,7 +19,7 @@ import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.6.0-unify-dsh'
+const MODULE_VERSION = '0.7.0-split-key'
 
 const zh = { 'panel.label': '画布' }
 const en = { 'panel.label': 'Canvas' }

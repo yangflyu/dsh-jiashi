@@ -65,6 +65,28 @@ function blockFontSize(text: string): React.CSSProperties | undefined {
   return { fontSize: HEADING_FONT_SIZE[m[1].length - 1] }
 }
 
+/** Ctrl/⌘ + \（中文输入法下 key 可能变成 '、'/'Process'，所以同时看物理键 code）。 */
+function isSplitShortcut(e: KeyboardEvent): boolean {
+  if (!(e.ctrlKey || e.metaKey)) return false
+  return (
+    e.code === 'Backslash' ||
+    e.code === 'IntlBackslash' ||
+    e.key === '\\' ||
+    e.key === '、' ||
+    e.key === 'Process'
+  )
+}
+
+/** 写诊断日志到宿主（client 入口设置的 window.__jiashiDebugLog）。 */
+function debugLog(event: string, data?: unknown) {
+  try {
+    const log = (window as unknown as { __jiashiDebugLog?: (event: string, data?: unknown) => void }).__jiashiDebugLog
+    log?.(event, data)
+  } catch {
+    /* ignore */
+  }
+}
+
 const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function MarkdownBlockEditor(
   {
     value,
@@ -188,23 +210,40 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
     [updateBlock, autosize],
   )
 
-  /** Ctrl+\ 在光标处把当前块一分为二 */
+  /** Ctrl+\ 在光标处把当前块一分为二（光标在末尾时在下方新建空块） */
   const splitAtCursor = useCallback((idx: number, ta: HTMLTextAreaElement) => {
     const pos = ta.selectionStart
     const before = ta.value.slice(0, pos).replace(/\s+$/, '')
     const after = ta.value.slice(pos).replace(/^\s+/, '')
-    if (!after.trim() || !before.trim()) return
-    const arr = blocksRef.current.map((b, i) => (i === idx ? { ...b, text: before } : b))
-    arr.splice(idx + 1, 0, {
-      key: `mb-split-${splitSeq++}`,
-      text: after,
-      start: 0,
-      end: after.length,
-    })
+    if (!before.trim() && !after.trim()) {
+      debugLog('editor.split-empty', { idx, pos })
+      return
+    }
+    let arr: MdBlock[]
+    let focusIdx: number
+    let mode: 'before' | 'middle' | 'end'
+    if (!before.trim()) {
+      // 光标在块首：在上面插入空块，原文留在当前块（和文本编辑器里"行首回车"一致）
+      arr = [...blocksRef.current]
+      arr.splice(idx, 0, { key: `mb-split-${splitSeq++}`, text: '', start: 0, end: 0 })
+      focusIdx = idx
+      mode = 'before'
+    } else {
+      arr = blocksRef.current.map((b, i) => (i === idx ? { ...b, text: before } : b))
+      arr.splice(idx + 1, 0, {
+        key: `mb-split-${splitSeq++}`,
+        text: after,
+        start: 0,
+        end: after.length,
+      })
+      focusIdx = idx + 1
+      mode = after.trim() ? 'middle' : 'end'
+    }
     setBlocks(arr)
     blocksRef.current = arr
     emit(arr)
-    setEditingIdx(idx + 1)
+    setEditingIdx(focusIdx)
+    debugLog('editor.split', { idx, mode, beforeLength: before.length, afterLength: after.length })
   }, [emit])
 
   // 键盘必须用**原生监听**，不能只用 React 的 onKeyDown：
@@ -224,21 +263,32 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
       }
       // Ctrl+\ 拆块 —— 用 e.code 物理键判断最可靠：
       // 中文输入法下 e.key 可能变成 'Process'/'、'，导致判定失效
-      const isSplit = (e.ctrlKey || e.metaKey) && (
-        e.code === 'Backslash' ||
-        e.code === 'IntlBackslash' ||
-        e.key === '\\' ||
-        e.key === '、' ||
-        e.key === 'Process'
-      )
-      if (isSplit) {
+      if (isSplitShortcut(e)) {
         e.preventDefault()
         e.stopPropagation()
+        debugLog('editor.key-target', { key: e.key, code: e.code })
         splitAtCursor(editingIdx, ta)
       }
     }
     ta.addEventListener('keydown', onNativeKeyDown)
-    return () => ta.removeEventListener('keydown', onNativeKeyDown)
+
+    // 兜底：DSH 外壳/宿主可能在冒泡阶段处理或吞掉组合键。
+    // 在 window **捕获阶段**先接住，但只处理"焦点在我们块文本框里"的 Ctrl+\。
+    const onWindowCapture = (e: KeyboardEvent) => {
+      const active = document.activeElement
+      if (!(active instanceof HTMLTextAreaElement)) return
+      if (active.dataset.jiashiBlockEditor === undefined) return
+      if (!isSplitShortcut(e)) return
+      debugLog('editor.key-capture', { key: e.key, code: e.code })
+      e.preventDefault()
+      e.stopPropagation()
+      splitAtCursor(editingIdx, active)
+    }
+    window.addEventListener('keydown', onWindowCapture, true)
+    return () => {
+      ta.removeEventListener('keydown', onNativeKeyDown)
+      window.removeEventListener('keydown', onWindowCapture, true)
+    }
   }, [editingIdx, exitEditing, splitAtCursor])
 
   return (
@@ -250,6 +300,8 @@ const MarkdownBlockEditor = forwardRef<BlockEditorHandle, Props>(function Markdo
               <textarea
                 ref={taRef}
                 className="tb-md-textarea"
+                data-jiashi-block-editor=""
+                data-block-index={i}
                 value={b.text}
                 rows={1}
                 style={blockFontSize(b.text)}
