@@ -1988,3 +1988,12 @@
   transition: opacity 0.12s ease;
   z-index: 3;
 }
+
+/* ── 卡片拖动条只在该卡片悬停时出现，保持默认界面干净 ── */
+.tb-drag-grip {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.tb-wrapper:hover .tb-drag-grip {
+  opacity: 1;
+}

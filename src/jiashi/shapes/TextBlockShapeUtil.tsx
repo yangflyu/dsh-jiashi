@@ -679,9 +679,9 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
 
     // ── Pull-out preview line ────────────────────────────────────
 
-    // 拉出手柄：不再只在"选中"时出现——淡显在卡片边缘、悬停变亮，
-    // 避免用户根本不知道这三个拖出入口存在（文档也说这类手势完全没有按钮提示）。
-    const showHandles = !pullDrag?.active
+    // 拉出手柄：用户明确不需要这套"边缘＋号"入口（他要的是选中文字拖出），
+    // 默认不渲染，保持卡片干净；代码留着，未来若要恢复只改这一行。
+    const showHandles = false
 
     // Calculate preview line in page coordinates
     let previewLine: { x1: number; y1: number; x2: number; y2: number } | null = null

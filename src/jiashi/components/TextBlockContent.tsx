@@ -649,10 +649,8 @@ export default function TextBlockContent({
   // 选中文字后浮出的「拖出成卡」按钮（拖出创建手势的可见兜底入口）
   const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   useEffect(() => {
-    if (isEditing) {
-      setSelMenu(null)
-      return
-    }
+    // 编辑态/预览态都允许：选中文字就浮出「拖出成卡」按钮。
+    // （编辑态在 textarea 里选字时 window 选区是收起的，不会误触发。）
     const el = containerRef.current
     if (!el) return
     const onUp = () => {
@@ -688,7 +686,7 @@ export default function TextBlockContent({
     }
     document.addEventListener('mouseup', onUp)
     return () => document.removeEventListener('mouseup', onUp)
-  }, [isEditing])
+  }, [])
   // ── 右键菜单 ──
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; handler: () => void; label: string } | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
