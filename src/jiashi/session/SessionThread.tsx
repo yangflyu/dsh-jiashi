@@ -63,6 +63,22 @@ interface ThreadMessage {
   seq: number
 }
 
+/**
+ * DSH 在会话开头（以及部分轮次）会注入「运行时上下文」——工作目录、文件策略、
+ * 审批策略等（就是本对话最前面那段 Current runtime context...）。
+ * 它是以 user/message 的形式写进会话日志的，但**不是用户说的话**，
+ * 画布上不该显示它（否则每张卡都像用户发了一大段系统文字）。
+ */
+function isInjectedRuntimeContext(text: string): boolean {
+  const head = text.trimStart()
+  return (
+    head.startsWith('Current runtime context') ||
+    head.includes('This snapshot supersedes earlier runtime-context snapshots') ||
+    head.startsWith('<runtime-context') ||
+    (head.startsWith('Current working directory:') && head.includes('Current DSH file policy'))
+  )
+}
+
 /** 只取持久的 user/assistant 消息（transient 流式片段单独处理）。 */
 function extractMessages(entries: readonly any[]): ThreadMessage[] {
   const messages: ThreadMessage[] = []
@@ -74,6 +90,7 @@ function extractMessages(entries: readonly any[]): ThreadMessage[] {
     const data = event.data ?? {}
     const text = contentText(data.content ?? data.message?.content ?? [])
     if (text === '') continue
+    if (event.type === 'user/message' && isInjectedRuntimeContext(text)) continue
     messages.push({
       role: event.type === 'user/message' ? 'user' : 'assistant',
       text,
