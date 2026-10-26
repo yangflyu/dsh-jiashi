@@ -11,6 +11,8 @@ import {
   mergeTextIntoBlock,
   DEFAULT_W,
   DEFAULT_H,
+  PULL_NOTE_W,
+  PULL_NOTE_H,
 } from '../shapes/TextBlockShapeUtil'
 import AIInputBar from './AIInputBar'
 import SessionThread from '../session/SessionThread'
@@ -884,14 +886,17 @@ export default function TextBlockContent({
     if (!ed || !cur) return
     const bounds = ed.getShapePageBounds(cur.id)
     const viewport = ed.getViewportPageBounds()
-    const x = bounds === null ? viewport.x + 80 : bounds.x + bounds.w + 80
-    const y = bounds === null ? viewport.y + 80 : bounds.y
+    // 小方框放在原卡右侧、错开一点，避免遮挡原卡
+    const x = bounds === null ? viewport.x + 80 : bounds.x + bounds.w + 48
+    const y = bounds === null ? viewport.y + 80 : bounds.y + 24
     sessionLog('textpull.note', { length: text.length })
     createChildBlock(ed, {
       parentId: cur.id,
       text,
       x,
       y,
+      w: PULL_NOTE_W,
+      h: PULL_NOTE_H,
       origin: 'center',
       arrow: true,
       inheritConversation: false,
@@ -1269,8 +1274,10 @@ export default function TextBlockContent({
         createChildBlock(tldrawEditor, {
           parentId: curId,
           text: dragContent,
-          x: pagePoint.x - 170,
-          y: pagePoint.y - 60,
+          x: pagePoint.x - PULL_NOTE_W / 2,
+          y: pagePoint.y - PULL_NOTE_H / 2,
+          w: PULL_NOTE_W,
+          h: PULL_NOTE_H,
           arrow: false,
           inheritConversation: false,
           kind: 'subbox',
@@ -1753,8 +1760,10 @@ export default function TextBlockContent({
             createChildBlock(ed, {
               parentId: cur.id,
               text: selMenu.text,
-              x: page.x - DEFAULT_W / 2,
-              y: page.y - DEFAULT_H / 2,
+              x: page.x + 16,
+              y: page.y - PULL_NOTE_H / 2,
+              w: PULL_NOTE_W,
+              h: PULL_NOTE_H,
               origin: 'center',
               arrow: true,
               inheritConversation: false,

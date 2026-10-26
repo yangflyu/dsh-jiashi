@@ -150,6 +150,10 @@ const DEFAULT_AI_RESPONSES: AiResponseEntry[] = []
 export const DEFAULT_W = 680
 export const DEFAULT_H = 204 // 120 × 1.7
 
+/** 拖出生成的便签卡默认尺寸：小方框，避免一出来就盖住原卡（用户可再自己拉大） */
+export const PULL_NOTE_W = 360
+export const PULL_NOTE_H = 160
+
 const PULL_THRESHOLD = 20 // px — minimum drag distance to trigger creation
 
 // ── 名片展开编辑的缩略几何缓存 ─────────────────────────────
@@ -192,6 +196,9 @@ export interface CreateChildBlockOptions {
   text?: string
   x: number
   y: number
+  /** 新块尺寸（缺省用 DEFAULT_W/H；拖出的便签卡用小方框） */
+  w?: number
+  h?: number
   /** 连线锚点方向；'center' = 两端都取中心（B 的语义） */
   origin?: PullOrigin | 'center'
   /** 是否画箭头（C 的"拖出新建"不连线） */
@@ -220,6 +227,24 @@ export function createChildBlock(editor: Editor, opts: CreateChildBlockOptions):
   const text = opts.text ?? ''
   const items: MixedItem[] = text.trim() === '' ? [] : [{ kind: 'user', id: createShapeId(), text }]
   const props: Record<string, unknown> = { ...deriveTextBlockProps(items) }
+  const w = opts.w ?? DEFAULT_W
+  const h = opts.h ?? DEFAULT_H
+  props.w = w
+  props.h = h
+  // 避免新卡一出来就盖住父卡：若目标矩形与父卡重叠，往右让开
+  let x = opts.x
+  let y = opts.y
+  const parentBounds = parent === undefined ? null : editor.getShapePageBounds(parent.id)
+  if (
+    parentBounds !== null &&
+    x < parentBounds.x + parentBounds.w &&
+    x + w > parentBounds.x &&
+    y < parentBounds.y + parentBounds.h &&
+    y + h > parentBounds.y
+  ) {
+    x = parentBounds.x + parentBounds.w + 48
+    y = parentBounds.y
+  }
   if (
     opts.inheritConversation !== false &&
     parentProps?.conversationId !== undefined &&
@@ -231,7 +256,7 @@ export function createChildBlock(editor: Editor, opts: CreateChildBlockOptions):
   }
   const childId = createShapeId()
   editor.batch(() => {
-    editor.createShape({ id: childId, type: 'text-block', x: opts.x, y: opts.y, props: props as never })
+    editor.createShape({ id: childId, type: 'text-block', x, y, props: props as never })
     if (opts.arrow !== false && parent !== undefined) {
       const arrowId = createShapeId()
       editor.createShape({ id: arrowId, type: 'arrow', x: 0, y: 0 })
@@ -650,8 +675,11 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
       createChildBlock(editor, {
         parentId: cur.id,
         text: selectedText,
-        x: pageX - DEFAULT_W / 2,
-        y: pageY - DEFAULT_H / 2,
+        // 小方框：落点稍微往右下让开，避免一出来就盖住原卡
+        x: pageX + 16,
+        y: pageY - PULL_NOTE_H / 2,
+        w: PULL_NOTE_W,
+        h: PULL_NOTE_H,
         origin: 'center',
         arrow: true,
         // 侧问卡：不要继承原会话，否则提问会写回主线会话；它在第一次发 AI 消息时
