@@ -802,18 +802,21 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
               <div
                 className="pull-handle pull-handle-bottom"
                 data-idle={isSelected ? '0' : '1'}
+                style={{ opacity: isSelected ? undefined : 0.45 }}
                 title="拖出：向下新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('bottom')}
               />
               <div
                 className="pull-handle pull-handle-right"
                 data-idle={isSelected ? '0' : '1'}
+                style={{ opacity: isSelected ? undefined : 0.45 }}
                 title="拖出：向右新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('right')}
               />
               <div
                 className="pull-handle pull-handle-left"
                 data-idle={isSelected ? '0' : '1'}
+                style={{ opacity: isSelected ? undefined : 0.45 }}
                 title="拖出：向左新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('left')}
               />

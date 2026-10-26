@@ -20,7 +20,7 @@ import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.12.0-pointer-diag'
+const MODULE_VERSION = '0.13.0-css-refresh'
 
 const zh = { 'panel.label': '画布', 'split.item': '把光标所在的子框拆成两个' }
 const en = { 'panel.label': 'Canvas', 'split.item': 'Split the focused sub-box in two' }
@@ -42,15 +42,19 @@ function boardLog(event, data) {
 
 let stylesInjected = false
 function injectStyles() {
+  // 每次模块加载都刷新样式内容：HMR 会换掉 JS，但旧的 <style> 标签还在，
+  // 如果这里直接跳过，改过的 CSS（比如拖出手柄的可见性）就永远不生效。
   if (stylesInjected) return
   stylesInjected = true
   const add = (id, text) => {
-    if (document.querySelector(`style[data-jiashi="${id}"]`) !== null) return
-    const style = document.createElement('style')
-    style.dataset.plugin = 'dsh-jiashi'
-    style.dataset.jiashi = id
+    let style = document.querySelector(`style[data-jiashi="${id}"]`)
+    if (style === null) {
+      style = document.createElement('style')
+      style.dataset.plugin = 'dsh-jiashi'
+      style.dataset.jiashi = id
+      document.head.appendChild(style)
+    }
     style.textContent = text
-    document.head.appendChild(style)
   }
   add('tldraw', tldrawCss)
   add('app', appCss)
@@ -118,6 +122,17 @@ function Board(props) {
           shapePointer: shapeEl === null ? null : getComputedStyle(shapeEl).pointerEvents,
           hit: hit === null ? null : `${hit.tagName}.${String(hit.className ?? '').slice(0, 40)}`,
           hitPointer: hit === null ? null : getComputedStyle(hit).pointerEvents,
+          ...(() => {
+            const handle = host?.querySelector('.pull-handle') ?? null
+            if (handle === null) return { handleOpacity: null, handleRect: null, handleHit: null }
+            const hr = handle.getBoundingClientRect()
+            const h = document.elementFromPoint(hr.left + hr.width / 2, hr.top + hr.height / 2)
+            return {
+              handleOpacity: getComputedStyle(handle).opacity,
+              handleRect: `${Math.round(hr.left)},${Math.round(hr.top)} ${Math.round(hr.width)}x${Math.round(hr.height)}`,
+              handleHit: h === null ? null : `${h.tagName}.${String(h.className ?? '').slice(0, 30)}`,
+            }
+          })(),
         })
       } catch (error) {
         boardLog('diag.pointer-failed', { error: String(error?.message ?? error) })
