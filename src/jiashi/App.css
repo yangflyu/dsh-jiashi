@@ -1934,3 +1934,33 @@
 .pull-handle[data-idle='1']:hover {
   opacity: 1;
 }
+
+/* ── 会话消息悬停操作：拖出成卡 / 拆出 ── */
+.jiashi-msg-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.jiashi-msg-wrap:hover .jiashi-msg-actions {
+  opacity: 1;
+}
+.jiashi-msg-pull {
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: transparent;
+  color: #475467;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.jiashi-msg-pull:hover {
+  border-color: #7c4dff;
+  color: #7c4dff;
+}
+.jiashi-session-thread,
+.jiashi-session-messages {
+  user-select: text;
+}

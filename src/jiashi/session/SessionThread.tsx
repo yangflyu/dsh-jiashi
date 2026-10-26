@@ -109,6 +109,7 @@ export default function SessionThread({
   onMerge,
   pendingPrompt,
   onPendingPromptConsumed,
+  onPullText,
 }: {
   sessionId: string
   isDarkMode?: boolean
@@ -124,6 +125,8 @@ export default function SessionThread({
   /** 刚绑定会话时要自动发送的一句（只发一次） */
   pendingPrompt?: string
   onPendingPromptConsumed?: () => void
+  /** 把选中的文字（或整条消息）拖成一张新卡 */
+  onPullText?: (text: string) => void
 }) {
   const { entry, error } = useSessionEntry(sessionId)
   if (error !== null) {
@@ -142,6 +145,7 @@ export default function SessionThread({
       onMerge={onMerge}
       pendingPrompt={pendingPrompt}
       onPendingPromptConsumed={onPendingPromptConsumed}
+      onPullText={onPullText}
     />
   )
 }
@@ -155,6 +159,7 @@ function SessionThreadInner({
   onMerge,
   pendingPrompt,
   onPendingPromptConsumed,
+  onPullText,
 }: {
   entry: any
   compact: boolean
@@ -164,6 +169,7 @@ function SessionThreadInner({
   onMerge?: () => void
   pendingPrompt?: string
   onPendingPromptConsumed?: () => void
+  onPullText?: (text: string) => void
 }) {
   const { face, eventSource } = entry
   const sessionTitle = useSessionTitle(face.sessionId)
@@ -319,17 +325,34 @@ function SessionThreadInner({
               <div className={message.role === 'user' ? 'jiashi-msg jiashi-msg-user' : 'jiashi-msg jiashi-msg-assistant'}>
                 {message.text}
               </div>
-              {onSplit !== undefined && message.role === 'user' ? (
-                <button
-                  type="button"
-                  className="jiashi-msg-split"
-                  title="从这条消息起拆到一张新卡（只是显示分段）"
-                  onClick={() => onSplit(message.seq)}
-                  onPointerDown={stopPointer}
-                >
-                  ✂ 拆出
-                </button>
-              ) : null}
+              <div className="jiashi-msg-actions">
+                {onPullText !== undefined ? (
+                  <button
+                    type="button"
+                    className="jiashi-msg-pull"
+                    title="把这段文字（或选中的一部分）拖成一张新卡"
+                    onPointerDown={stopPointer}
+                    onClick={() => {
+                      const sel = window.getSelection()
+                      const selected = sel !== null && !sel.isCollapsed ? sel.toString().trim() : ''
+                      onPullText(selected !== '' ? selected : message.text)
+                    }}
+                  >
+                    拖出成卡
+                  </button>
+                ) : null}
+                {onSplit !== undefined && message.role === 'user' ? (
+                  <button
+                    type="button"
+                    className="jiashi-msg-split"
+                    title="从这条消息起拆到一张新卡（只是显示分段）"
+                    onClick={() => onSplit(message.seq)}
+                    onPointerDown={stopPointer}
+                  >
+                    ✂ 拆出
+                  </button>
+                ) : null}
+              </div>
             </div>
           ))
         )}

@@ -878,6 +878,29 @@ export default function TextBlockContent({
     })
   }, [saveItems])
 
+  // 把会话线程里的一段文字（AI 回答 / 用户提问）变成一张独立的便签卡：
+  // 不继承会话，方便在侧边继续追问、不打扰主线。
+  const handlePullNoteFromText = useCallback((text: string) => {
+    const ed = editorRef.current
+    const cur = shapeRef.current
+    if (!ed || !cur) return
+    const bounds = ed.getShapePageBounds(cur.id)
+    const viewport = ed.getViewportPageBounds()
+    const x = bounds === null ? viewport.x + 80 : bounds.x + bounds.w + 80
+    const y = bounds === null ? viewport.y + 80 : bounds.y
+    sessionLog('textpull.note', { length: text.length })
+    createChildBlock(ed, {
+      parentId: cur.id,
+      text,
+      x,
+      y,
+      origin: 'center',
+      arrow: true,
+      inheritConversation: false,
+      kind: 'text',
+    })
+  }, [])
+
   // 旧数据首次加载 → 一次性持久化 items（迁移写回 shape props）
   useEffect(() => {
     if (itemsProp && itemsProp.length > 0) return
@@ -1344,7 +1367,7 @@ export default function TextBlockContent({
       const t = e.target as HTMLElement | null
       // 按下处必须在卡片正文里（编辑态渲染块 / 预览态正文），输入框、按钮、会话线程除外。
       if (!t || e.button !== 0) return
-      if (t.closest('textarea, input, button, a, .jiashi-session-thread')) return
+      if (t.closest('textarea, input, button, a')) return
       if (!t.closest('.tb-md-rendered, .textblock-preview')) return
 
       // 不再要求"先选好文字"：直接按下拖动就当作选字拖出。
@@ -1595,6 +1618,7 @@ export default function TextBlockContent({
               onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
               pendingPrompt={pendingDshPrompt ?? undefined}
               onPendingPromptConsumed={() => setPendingDshPrompt(null)}
+              onPullText={(text) => handlePullNoteFromText(text)}
             />
           ) : (
             <AIInputBar
@@ -1701,6 +1725,7 @@ export default function TextBlockContent({
               onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
               pendingPrompt={pendingDshPrompt ?? undefined}
               onPendingPromptConsumed={() => setPendingDshPrompt(null)}
+              onPullText={(text) => handlePullNoteFromText(text)}
             />
           )}
         </div>
