@@ -1368,7 +1368,9 @@ export default function TextBlockContent({
       // 按下处必须在卡片正文里（编辑态渲染块 / 预览态正文），输入框、按钮、会话线程除外。
       if (!t || e.button !== 0) return
       if (t.closest('textarea, input, button, a')) return
-      if (!t.closest('.tb-md-rendered, .textblock-preview')) return
+      // 预览态正文、编辑态渲染块、以及对话卡里的会话线程消息都算（编辑态下线程
+      // 不在 .textblock-preview 里，之前会漏掉——导致"能选中但拖不出"）。
+      if (!t.closest('.tb-md-rendered, .textblock-preview, .jiashi-session-thread, .jiashi-msg')) return
 
       // 不再要求"先选好文字"：直接按下拖动就当作选字拖出。
       // 过程中读浏览器原生的实时选区，拖出卡片外松手就建卡。

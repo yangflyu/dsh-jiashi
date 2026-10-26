@@ -1973,3 +1973,18 @@
   user-select: text !important;
   -webkit-user-select: text !important;
 }
+
+/* ── 会话消息操作按钮：绝对定位，出现/消失不改变消息排版 ── */
+.jiashi-msg-wrap {
+  position: relative;
+}
+.jiashi-msg-actions {
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 3;
+}
