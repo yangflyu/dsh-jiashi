@@ -1377,24 +1377,48 @@ export default function TextBlockContent({
       // 不在 .textblock-preview 里，之前会漏掉——导致"能选中但拖不出"）。
       if (!t.closest('.tb-md-rendered, .textblock-preview, .jiashi-session-thread, .jiashi-msg')) return
 
-      // 不再要求"先选好文字"：直接按下拖动就当作选字拖出。
-      // 过程中读浏览器原生的实时选区，拖出卡片外松手就建卡。
-      dragStateRef.current = {
-        active: true,
-        startX: e.clientX,
-        startY: e.clientY,
-        pendingCheck: true,
-        selectedText: '',
-        ctrlKey: e.ctrlKey || e.metaKey,
-        savedRange: null,
-        itemId: null,
+      // 卡片被选中时，框内任意位置按下拖动 = 移动整张卡（不用再抓标题栏）。
+      const beginCardDrag = (ev: MouseEvent) => {
+        const cur = shapeRef.current
+        const zoom = Math.max(0.01, editorLocal.getZoomLevel())
+        const startX = ev.clientX
+        const startY = ev.clientY
+        const shapeX = cur.x
+        const shapeY = cur.y
+        let moved = false
+        const onMove = (m: MouseEvent) => {
+          const dx = m.clientX - startX
+          const dy = m.clientY - startY
+          if (!moved && Math.abs(dx) + Math.abs(dy) < 2) return
+          moved = true
+          try {
+            editorLocal.updateShape({
+              id: cur.id,
+              type: 'text-block',
+              x: shapeX + dx / zoom,
+              y: shapeY + dy / zoom,
+            })
+          } catch {
+            /* ignore */
+          }
+        }
+        const onUp = () => {
+          window.removeEventListener('mousemove', onMove)
+          window.removeEventListener('mouseup', onUp)
+          if (moved) sessionLog('card.drag-end', { shapeId: cur.id })
+        }
+        window.addEventListener('mousemove', onMove)
+        window.addEventListener('mouseup', onUp)
       }
-      sessionLog('gesture.textdrag-arm', { mode: 'press-drag' })
 
-      // 如果按下时已经有"选中的文字"、且按在选区内：直接把这段文字当作拖出内容。
-      // 浏览器在 mousedown 时可能收起选区，因此不能只依赖随后的实时选区。
+      const readSelection = (): string => {
+        const sel = window.getSelection()
+        return sel === null ? '' : sel.toString().trim()
+      }
+
+      // 先判断：按下时是否已有选区、且按在选区内（这种情况优先"拖出成卡"）
       const priorSel = window.getSelection()
-      let pressHasPrior = false
+      let priorInfo: { text: string; range: Range; itemId: string | null } | null = null
       if (priorSel !== null && !priorSel.isCollapsed && priorSel.rangeCount > 0) {
         const priorText = priorSel.toString().trim()
         const range = priorSel.getRangeAt(0)
@@ -1403,22 +1427,37 @@ export default function TextBlockContent({
           (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom,
         )
         if (priorText !== '' && inside) {
-          pressHasPrior = true
-          dragStateRef.current.selectedText = priorText
-          dragStateRef.current.savedRange = range.cloneRange()
           const anchor =
             range.startContainer.nodeType === Node.TEXT_NODE
               ? range.startContainer.parentElement
               : (range.startContainer as HTMLElement)
-          dragStateRef.current.itemId = (anchor?.closest('[data-item-id]') as HTMLElement | null)?.dataset.itemId ?? null
-          sessionLog('gesture.textdrag-prior', { length: priorText.length })
+          priorInfo = {
+            text: priorText,
+            range: range.cloneRange(),
+            itemId: (anchor?.closest('[data-item-id]') as HTMLElement | null)?.dataset.itemId ?? null,
+          }
         }
       }
 
-      const readSelection = (): string => {
-        const sel = window.getSelection()
-        return sel === null ? '' : sel.toString().trim()
+      // 选中状态下、且不是"从已有选区拖出" → 整卡拖动
+      // （编辑态除外：编辑态里正文要用来选字/编辑）
+      if (priorInfo === null && isSelectedRef.current && !isEditingRef.current) {
+        e.preventDefault()
+        beginCardDrag(e)
+        return
       }
+
+      dragStateRef.current = {
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        pendingCheck: true,
+        selectedText: priorInfo?.text ?? '',
+        ctrlKey: e.ctrlKey || e.metaKey,
+        savedRange: priorInfo?.range ?? null,
+        itemId: priorInfo?.itemId ?? null,
+      }
+      sessionLog('gesture.textdrag-arm', { mode: priorInfo === null ? 'press-drag' : 'prior' })
 
       docMoveHandler = (ev: MouseEvent) => {
         const ds = dragStateRef.current
