@@ -281,6 +281,7 @@ function SessionThreadInner({
       data-jiashi-session={face.sessionId}
       onPointerDown={stopPointer}
       onWheel={stopPointer}
+      style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
     >
       <div className="jiashi-session-head">
         <span className="jiashi-session-dot" data-running={snapshot.running ? '1' : '0'} />
@@ -322,7 +323,10 @@ function SessionThreadInner({
         ) : (
           messages.map((message) => (
             <div key={`${message.seq}-${message.role}`} className={message.role === 'user' ? 'jiashi-msg-wrap jiashi-wrap-user' : 'jiashi-msg-wrap jiashi-wrap-assistant'}>
-              <div className={message.role === 'user' ? 'jiashi-msg jiashi-msg-user' : 'jiashi-msg jiashi-msg-assistant'}>
+              <div
+                className={message.role === 'user' ? 'jiashi-msg jiashi-msg-user' : 'jiashi-msg jiashi-msg-assistant'}
+                style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+              >
                 {message.text}
               </div>
               <div className="jiashi-msg-actions">

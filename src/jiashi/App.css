@@ -1964,3 +1964,12 @@
 .jiashi-session-messages {
   user-select: text;
 }
+
+/* ── 会话线程文字必须可选（选中才能拖出成卡） ── */
+.tl-html-container .jiashi-session-thread,
+.tl-html-container .jiashi-session-messages,
+.tl-html-container .jiashi-msg-wrap,
+.tl-html-container .jiashi-msg {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}

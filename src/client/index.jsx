@@ -20,7 +20,7 @@ import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.20.0-thread-pull'
+const MODULE_VERSION = '0.21.0-select-thread'
 
 const zh = { 'panel.label': '画布', 'split.item': '把光标所在的子框拆成两个' }
 const en = { 'panel.label': 'Canvas', 'split.item': 'Split the focused sub-box in two' }
@@ -159,9 +159,32 @@ function Board(props) {
       }, 0)
     }
     document.addEventListener('mouseup', onUp)
+    // 诊断：选区是否真的形成（用户反馈"对话卡里的回答选不中"时用来定位）
+    let lastLen = 0
+    const onSelChange = () => {
+      try {
+        const sel = window.getSelection()
+        const len = sel === null || sel.isCollapsed ? 0 : sel.toString().trim().length
+        if (len === 0 || len === lastLen) {
+          lastLen = len
+          return
+        }
+        lastLen = len
+        const anchor = sel?.anchorNode ?? null
+        const el = anchor instanceof Element ? anchor : anchor?.parentElement ?? null
+        boardLog('diag.selchange', {
+          length: len,
+          cls: el === null ? null : `${el.tagName}.${String(el.className ?? '').slice(0, 40)}`,
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+    document.addEventListener('selectionchange', onSelChange)
     return () => {
       window.clearTimeout(timer)
       document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('selectionchange', onSelChange)
     }
   }, [])
   return (
