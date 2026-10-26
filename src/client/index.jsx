@@ -20,7 +20,7 @@ import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.13.0-css-refresh'
+const MODULE_VERSION = '0.14.0-visible-handles'
 
 const zh = { 'panel.label': '画布', 'split.item': '把光标所在的子框拆成两个' }
 const en = { 'panel.label': 'Canvas', 'split.item': 'Split the focused sub-box in two' }
@@ -138,7 +138,31 @@ function Board(props) {
         boardLog('diag.pointer-failed', { error: String(error?.message ?? error) })
       }
     }, 2500)
-    return () => window.clearTimeout(timer)
+    // 诊断：画布里到底能不能选中文字（B 手势的前提）。
+    const onUp = () => {
+      window.setTimeout(() => {
+        try {
+          const sel = window.getSelection()
+          if (!sel || sel.isCollapsed) return
+          const text = sel.toString().trim()
+          if (text === '') return
+          const anchor = sel.anchorNode
+          const anchorEl = anchor instanceof Element ? anchor : anchor?.parentElement ?? null
+          boardLog('diag.selection', {
+            length: text.length,
+            anchor: anchorEl === null ? null : `${anchorEl.tagName}.${String(anchorEl.className ?? '').slice(0, 40)}`,
+            inBoard: anchorEl !== null && anchorEl.closest('[data-jiashi-board]') !== null,
+          })
+        } catch {
+          /* ignore */
+        }
+      }, 0)
+    }
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('mouseup', onUp)
+    }
   }, [])
   return (
     <SessionInfoProvider useSessions={props.useSessions}>

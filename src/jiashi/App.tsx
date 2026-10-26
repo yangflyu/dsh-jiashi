@@ -1,6 +1,6 @@
 import { Tldraw, useEditor, createShapeId, Editor, useActions, useTools, TLUiEventSource, TLShapeId } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { TextBlockShapeUtil } from './shapes/TextBlockShapeUtil'
+import { TextBlockShapeUtil, createChildBlock, DEFAULT_W, DEFAULT_H } from './shapes/TextBlockShapeUtil'
 import LinearView from './components/LinearView'
 import AISettingsPanel from './components/AISettingsPanel'
 import { KeyboardInterceptor } from './keyboard/KeyboardInterceptor'
@@ -26,13 +26,14 @@ type AppMode = 'canvas' | 'linear'
  * Toolbar — overlays on top of tldraw canvas.
  * Only rendered in canvas mode. In linear mode, LinearView has its own bar.
  */
-function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard, onCleanEmptyCards }: {
+function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard, onAddChildCard, onCleanEmptyCards }: {
   onToggleMode: () => void
   onOpenSettings: () => void
   onOpenShortcuts: () => void
   onToggleAttention: () => void
   attentionActive: boolean
   onCreateSessionCard: () => void
+  onAddChildCard: () => void
   onCleanEmptyCards: () => void
 }) {
   const editor = useEditor()
@@ -93,6 +94,17 @@ function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggle
           <line x1="9" y1="15" x2="13" y2="15" />
         </svg>
         <span className="toolbar-label">对话卡</span>
+      </button>
+
+      {/* 子卡：从选中的卡片向下新建一张（拖出手柄的按钮版兜底） */}
+      <button className="toolbar-btn" onClick={onAddChildCard} title="从选中的卡片向下新建一张子卡（等同于拖出底边手柄）">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="4" y="3" width="16" height="7" rx="2" />
+          <line x1="12" y1="10" x2="12" y2="16" />
+          <polyline points="9 13 12 16 15 13" />
+          <rect x="7" y="17" width="10" height="5" rx="1.5" />
+        </svg>
+        <span className="toolbar-label">子卡</span>
       </button>
 
       {/* Divider */}
@@ -518,6 +530,26 @@ export default function App() {
     }
   }, [editor])
 
+  // 工具栏「子卡」：从选中的卡片向下新建一张子卡（拖出手柄的按钮版兜底）。
+  const addChildCard = useCallback(() => {
+    if (!editor) return
+    const onlyId = editor.getOnlySelectedShapeId()
+    const selected = onlyId === null ? null : editor.getShape(onlyId)
+    const parent = selected !== null && selected.type === 'text-block' ? selected : null
+    const bounds = parent === null ? null : editor.getShapePageBounds(parent.id)
+    const viewport = editor.getViewportPageBounds()
+    const x = bounds === null ? viewport.x + viewport.w / 2 - DEFAULT_W / 2 : bounds.x + (bounds.w - DEFAULT_W) / 2
+    const y = bounds === null ? viewport.y + viewport.h / 2 - DEFAULT_H / 2 : bounds.y + bounds.h + 40
+    createChildBlock(editor, {
+      parentId: parent?.id,
+      x,
+      y,
+      origin: 'bottom',
+      arrow: parent !== null,
+      kind: 'addchild',
+    })
+  }, [editor])
+
   // 手动画箭头连接两张文本块时：目标没有会话就继承来源的会话，并从来源结束位置之后续接。
   useEffect(() => {
     if (!editor) return undefined
@@ -688,6 +720,7 @@ export default function App() {
             onToggleAttention={toggleAttentionUI}
             attentionActive={attentionActive}
             onCreateSessionCard={createSessionCard}
+            onAddChildCard={addChildCard}
             onCleanEmptyCards={cleanEmptyCards}
           />
         )}
