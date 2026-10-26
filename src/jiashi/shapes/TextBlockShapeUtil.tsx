@@ -727,6 +727,34 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
     return (
       <HTMLContainer id={shape.id}>
         <div className="tb-wrapper" style={{ position: 'relative', width: w, height: h }}>
+          {/* 拖动卡片的手柄：内容区现在要留给"选字"，所以单独给一个让事件
+              冒泡到 tldraw 的小拖动条（自身不 stopPropagation）。 */}
+          <div
+            className="tb-drag-grip"
+            title="拖动卡片"
+            style={{
+              position: 'absolute',
+              top: -15,
+              left: 10,
+              zIndex: 25,
+              height: 16,
+              padding: '0 7px',
+              borderRadius: 6,
+              background: isDarkMode ? 'rgba(196,167,255,0.18)' : 'rgba(124,77,255,0.12)',
+              color: isDarkMode ? '#c4b5fd' : '#7c4dff',
+              fontSize: 11,
+              lineHeight: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              cursor: 'grab',
+              pointerEvents: 'auto',
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ⠿ 拖动
+          </div>
           <div
             style={{
               background: bgColor,
