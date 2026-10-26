@@ -20,7 +20,7 @@ import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.10.0-item-split'
+const MODULE_VERSION = '0.11.0-pullout'
 
 const zh = { 'panel.label': '画布', 'split.item': '把光标所在的子框拆成两个' }
 const en = { 'panel.label': 'Canvas', 'split.item': 'Split the focused sub-box in two' }

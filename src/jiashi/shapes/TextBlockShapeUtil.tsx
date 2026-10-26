@@ -15,9 +15,10 @@ import {
   TLRichText,
   createShapeId,
   TLShapeId,
+  Editor,
 } from 'tldraw'
 import TextBlockContent from '../components/TextBlockContent'
-import { isDshSessionId, nextSeqAfter } from '../session/bridge'
+import { isDshSessionId, nextSeqAfter, sessionLog } from '../session/bridge'
 import { useSessionTitle } from '../session/SessionInfo'
 import { useState, useCallback, useRef, useEffect } from 'react'
 
@@ -178,6 +179,104 @@ function getPullAnchors(origin: PullOrigin) {
         end: { x: 1, y: 0.5 },     // right-center of child
       }
   }
+}
+
+// ─── 统一的"拖出创建" ────────────────────────────────────────────────
+// A（边缘手柄）/ B（选中文字拖出）/ C（子条目拖出）/ "+" 按钮共用这一条创建路径：
+//   · 新块 props 统一走 deriveTextBlockProps（写 items，而不是只写 content/htmlContent）
+//   · 需要连线的入口补 arrow + bindings（锚点按方向取）
+//   · 一律 select + setEditingShape —— 松手就能直接打字
+export interface CreateChildBlockOptions {
+  parentId?: TLShapeId
+  /** 新块带的文字；空 = 全新空块 */
+  text?: string
+  x: number
+  y: number
+  /** 连线锚点方向；'center' = 两端都取中心（B 的语义） */
+  origin?: PullOrigin | 'center'
+  /** 是否画箭头（C 的"拖出新建"不连线） */
+  arrow?: boolean
+  /** 是否继承父块的会话（默认 true；C 的独立新卡传 false） */
+  inheritConversation?: boolean
+  /** 日志用：哪个入口 */
+  kind: 'handle' | 'text' | 'addchild' | 'subbox'
+}
+
+/** 老数据（只有 content / userTextFragments / aiResponses）→ items，供合并时使用。 */
+function legacyItemsFromProps(props: TextBlockShape['props']): MixedItem[] {
+  const items: MixedItem[] = []
+  const texts = props.userTextFragments.length > 0
+    ? props.userTextFragments
+    : (props.content ? [props.content] : [])
+  for (const text of texts) items.push({ kind: 'user', id: createShapeId(), text })
+  for (const ai of props.aiResponses) items.push({ kind: 'ai', id: createShapeId(), ai })
+  return items
+}
+
+/** 拖出创建的统一实现，返回新块 id。 */
+export function createChildBlock(editor: Editor, opts: CreateChildBlockOptions): TLShapeId {
+  const parent = opts.parentId === undefined ? undefined : editor.getShape(opts.parentId)
+  const parentProps = parent !== undefined && parent.type === 'text-block' ? parent.props : undefined
+  const text = opts.text ?? ''
+  const items: MixedItem[] = text.trim() === '' ? [] : [{ kind: 'user', id: createShapeId(), text }]
+  const props: Record<string, unknown> = { ...deriveTextBlockProps(items) }
+  if (
+    opts.inheritConversation !== false &&
+    parentProps?.conversationId !== undefined &&
+    parentProps.conversationId !== ''
+  ) {
+    props.conversationId = parentProps.conversationId
+    const next = nextSeqAfter(parentProps.sessionToSeq)
+    if (next !== undefined) props.sessionFromSeq = next
+  }
+  const childId = createShapeId()
+  editor.batch(() => {
+    editor.createShape({ id: childId, type: 'text-block', x: opts.x, y: opts.y, props: props as never })
+    if (opts.arrow !== false && parent !== undefined) {
+      const arrowId = createShapeId()
+      editor.createShape({ id: arrowId, type: 'arrow', x: 0, y: 0 })
+      const anchors = opts.origin === undefined || opts.origin === 'center'
+        ? { start: { x: 0.5, y: 0.5 }, end: { x: 0.5, y: 0.5 } }
+        : getPullAnchors(opts.origin)
+      editor.createBindings([
+        {
+          type: 'arrow',
+          fromId: arrowId,
+          toId: parent.id,
+          props: { terminal: 'start', isPrecise: false, normalizedAnchor: anchors.start },
+        },
+        {
+          type: 'arrow',
+          fromId: arrowId,
+          toId: childId,
+          props: { terminal: 'end', isPrecise: false, normalizedAnchor: anchors.end },
+        },
+      ])
+    }
+    editor.select(childId)
+    editor.setEditingShape(childId)
+  })
+  sessionLog('pullout.create', {
+    kind: opts.kind,
+    parentId: opts.parentId ?? null,
+    childId,
+    hasText: text.trim() !== '',
+    x: Math.round(opts.x),
+    y: Math.round(opts.y),
+  })
+  return childId
+}
+
+/** C 的"合并"分支：把拖出来的文字作为新条目追加到目标卡（写 items，避免内容不显示）。 */
+export function mergeTextIntoBlock(editor: Editor, targetId: TLShapeId, text: string): void {
+  const target = editor.getShape(targetId)
+  if (target === undefined || target.type !== 'text-block') return
+  const existing = target.props.items !== undefined && target.props.items.length > 0
+    ? target.props.items
+    : legacyItemsFromProps(target.props)
+  const items: MixedItem[] = [...existing, { kind: 'user', id: createShapeId(), text }]
+  editor.updateShape({ id: targetId, type: 'text-block', props: { items, ...deriveTextBlockProps(items) } })
+  sessionLog('pullout.merge', { targetId, length: text.length })
 }
 
 // ─── Shape util ──────────────────────────────────────────────────────
@@ -484,52 +583,13 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
           if (dist >= PULL_THRESHOLD) {
             const pagePoint = editor.screenToPage({ x: e.clientX, y: e.clientY })
             const cur = shapeRef.current
-
-            const childId = createShapeId()
-            const arrowId = createShapeId()
-            const anchors = getPullAnchors(prev.origin)
-
-            editor.batch(() => {
-              editor.createShape({
-                id: childId,
-                type: 'text-block',
-                x: pagePoint.x - DEFAULT_W / 2,
-                y: pagePoint.y - DEFAULT_H / 2,
-                props: {
-                  conversationId: cur.props.conversationId,
-                  ...(cur.props.conversationId !== undefined && nextSeqAfter(cur.props.sessionToSeq) !== undefined
-                    ? { sessionFromSeq: nextSeqAfter(cur.props.sessionToSeq) }
-                    : {}),
-                },
-              })
-
-              editor.createShape({ id: arrowId, type: 'arrow', x: 0, y: 0 })
-
-              editor.createBindings([
-                {
-                  type: 'arrow',
-                  fromId: arrowId,
-                  toId: cur.id,
-                  props: {
-                    terminal: 'start',
-                    isPrecise: false,
-                    normalizedAnchor: anchors.start,
-                  },
-                },
-                {
-                  type: 'arrow',
-                  fromId: arrowId,
-                  toId: childId,
-                  props: {
-                    terminal: 'end',
-                    isPrecise: false,
-                    normalizedAnchor: anchors.end,
-                  },
-                },
-              ])
-
-              editor.select(childId)
-              editor.setEditingShape(childId)
+            createChildBlock(editor, {
+              parentId: cur.id,
+              x: pagePoint.x - DEFAULT_W / 2,
+              y: pagePoint.y - DEFAULT_H / 2,
+              origin: prev.origin,
+              arrow: true,
+              kind: 'handle',
             })
           }
 
@@ -538,7 +598,7 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
 
         container.removeEventListener('pointermove', onPointerMove)
         container.removeEventListener('pointerup', onPointerUp)
-        document.body.style.cursor = ''
+        container.style.cursor = ''
       }
 
       const onKeyDown = (e: KeyboardEvent) => {
@@ -546,20 +606,20 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
           setPullDrag(null)
           container.removeEventListener('pointermove', onPointerMove)
           container.removeEventListener('pointerup', onPointerUp)
-          document.body.style.cursor = ''
+          container.style.cursor = ''
         }
       }
 
       container.addEventListener('pointermove', onPointerMove)
       container.addEventListener('pointerup', onPointerUp)
       window.addEventListener('keydown', onKeyDown)
-      document.body.style.cursor = 'grabbing'
+      container.style.cursor = 'grabbing'
 
       return () => {
         container.removeEventListener('pointermove', onPointerMove)
         container.removeEventListener('pointerup', onPointerUp)
         window.removeEventListener('keydown', onKeyDown)
-        document.body.style.cursor = ''
+        container.style.cursor = ''
       }
     }, [pullDrag?.active])
 
@@ -586,47 +646,14 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
     const handlePullOut = useCallback((selectedText: string, pageX: number, pageY: number) => {
       const editor = editorRef.current
       const cur = shapeRef.current
-      const childId = createShapeId()
-      const arrowId = createShapeId()
-
-      editor.batch(() => {
-        editor.createShape({
-          id: childId,
-          type: 'text-block',
-          x: pageX - DEFAULT_W / 2,
-          y: pageY - DEFAULT_H / 2,
-          props: {
-            content: selectedText,
-            richText: toRichText(selectedText),
-            htmlContent: `<p>${selectedText}</p>`,
-            conversationId: cur.props.conversationId,
-          },
-        })
-        editor.createShape({ id: arrowId, type: 'arrow', x: 0, y: 0 })
-        editor.createBindings([
-          {
-            type: 'arrow',
-            fromId: arrowId,
-            toId: cur.id,
-            props: {
-              terminal: 'start',
-              isPrecise: false,
-              normalizedAnchor: { x: 0.5, y: 0.5 },
-            },
-          },
-          {
-            type: 'arrow',
-            fromId: arrowId,
-            toId: childId,
-            props: {
-              terminal: 'end',
-              isPrecise: false,
-              normalizedAnchor: { x: 0.5, y: 0.5 },
-            },
-          },
-        ])
-        editor.select(childId)
-        editor.setEditingShape(childId)
+      createChildBlock(editor, {
+        parentId: cur.id,
+        text: selectedText,
+        x: pageX - DEFAULT_W / 2,
+        y: pageY - DEFAULT_H / 2,
+        origin: 'center',
+        arrow: true,
+        kind: 'text',
       })
     }, [])
 
@@ -635,52 +662,14 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
     // "+" 按钮 — 在下方创建子节点并继承对话ID
     const handleAddChild = (e: React.MouseEvent) => {
       e.stopPropagation()
-      const editor = this.editor
-      const childId = createShapeId()
-      const arrowId = createShapeId()
       const gap = 40
-
-      const childX = shape.x + (w - DEFAULT_W) / 2
-      const childY = shape.y + h + gap
-
-      editor.batch(() => {
-        editor.createShape({
-          id: childId,
-          type: 'text-block',
-          x: childX,
-          y: childY,
-          props: {
-            conversationId: shape.props.conversationId,
-            ...(shape.props.conversationId !== undefined && nextSeqAfter(shape.props.sessionToSeq) !== undefined
-              ? { sessionFromSeq: nextSeqAfter(shape.props.sessionToSeq) }
-              : {}),
-          },
-        })
-        editor.createShape({ id: arrowId, type: 'arrow', x: 0, y: 0 })
-        editor.createBindings([
-          {
-            type: 'arrow',
-            fromId: arrowId,
-            toId: shape.id,
-            props: {
-              terminal: 'start',
-              isPrecise: false,
-              normalizedAnchor: { x: 0.5, y: 1 },
-            },
-          },
-          {
-            type: 'arrow',
-            fromId: arrowId,
-            toId: childId,
-            props: {
-              terminal: 'end',
-              isPrecise: false,
-              normalizedAnchor: { x: 0.5, y: 0 },
-            },
-          },
-        ])
-        editor.select(childId)
-        editor.setEditingShape(childId)
+      createChildBlock(this.editor, {
+        parentId: shape.id,
+        x: shape.x + (w - DEFAULT_W) / 2,
+        y: shape.y + h + gap,
+        origin: 'bottom',
+        arrow: true,
+        kind: 'addchild',
       })
     }
 
@@ -809,14 +798,17 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
             <>
               <div
                 className="pull-handle pull-handle-bottom"
+                title="拖出：向下新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('bottom')}
               />
               <div
                 className="pull-handle pull-handle-right"
+                title="拖出：向右新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('right')}
               />
               <div
                 className="pull-handle pull-handle-left"
+                title="拖出：向左新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('left')}
               />
             </>
@@ -859,6 +851,7 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
 
           <button
             className="tb-add-child-btn"
+            title="新建子卡（等同于从底边手柄拖出）"
             onClick={handleAddChild}
             onPointerDown={(e) => {
               // 阻止 tldraw 收到 pointerdown — 避免与选中/拖动手势冲突

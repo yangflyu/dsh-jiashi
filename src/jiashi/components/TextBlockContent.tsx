@@ -7,6 +7,8 @@ import {
   AiResponseVersion,
   MixedItem,
   deriveTextBlockProps,
+  createChildBlock,
+  mergeTextIntoBlock,
 } from '../shapes/TextBlockShapeUtil'
 import AIInputBar from './AIInputBar'
 import SessionThread from '../session/SessionThread'
@@ -1147,7 +1149,7 @@ export default function TextBlockContent({
         setDraftItems(null)
         document.removeEventListener('pointermove', onPointerMove)
         document.removeEventListener('pointerup', onPointerUp)
-        document.body.style.cursor = ''
+        tldrawEditor.getContainer().style.cursor = ''
         return
       }
 
@@ -1168,7 +1170,7 @@ export default function TextBlockContent({
         setDraftItems(null)
         document.removeEventListener('pointermove', onPointerMove)
         document.removeEventListener('pointerup', onPointerUp)
-        document.body.style.cursor = ''
+        tldrawEditor.getContainer().style.cursor = ''
         return
       }
 
@@ -1186,62 +1188,48 @@ export default function TextBlockContent({
       ) as TextBlockShape | undefined
 
       if (targetShape) {
-        // ── 合并到目标文本框 ──
-        const targetProps = targetShape.props
-        const newContent = targetProps.content
-          ? targetProps.content + '\n\n---\n\n' + dragContent
-          : dragContent
-
-        tldrawEditor.updateShape({
-          id: targetShape.id,
-          type: 'text-block',
-          props: {
-            content: newContent,
-            richText: toRichText(newContent),
-          },
-        })
+        // ── 合并到目标文本框：追加成目标卡里的一个新条目（写 items，保证渲染读得到） ──
+        mergeTextIntoBlock(tldrawEditor, targetShape.id, dragContent)
 
         if (subBoxDrag.isMove && subBoxDrag.itemId) {
           removeItemById(subBoxDrag.itemId)
         }
 
         tldrawEditor.select(targetShape.id)
+        sessionLog('subbox.drop', { target: 'merge', targetId: targetShape.id, isMove: subBoxDrag.isMove })
       } else {
-        // ── 拆分到新文本框 ──
-        const childId = createShapeId()
-        tldrawEditor.createShape({
-          id: childId,
-          type: 'text-block',
+        // ── 拖到空白处：创建新卡（不连线，独立成卡） ──
+        createChildBlock(tldrawEditor, {
+          parentId: curId,
+          text: dragContent,
           x: pagePoint.x - 170,
           y: pagePoint.y - 60,
-          props: {
-            content: dragContent,
-            richText: toRichText(dragContent),
-          },
+          arrow: false,
+          inheritConversation: false,
+          kind: 'subbox',
         })
-        tldrawEditor.select(childId)
-        tldrawEditor.setEditingShape(childId)
 
         if (subBoxDrag.isMove && subBoxDrag.itemId) {
           removeItemById(subBoxDrag.itemId)
         }
+        sessionLog('subbox.drop', { target: 'new', isMove: subBoxDrag.isMove })
       }
 
       setSubBoxDrag(null)
       setDraftItems(null)
       document.removeEventListener('pointermove', onPointerMove)
       document.removeEventListener('pointerup', onPointerUp)
-      document.body.style.cursor = ''
+      tldrawEditor.getContainer().style.cursor = ''
     }
 
     document.addEventListener('pointermove', onPointerMove)
     document.addEventListener('pointerup', onPointerUp)
-    document.body.style.cursor = subBoxDrag.isMove ? 'grabbing' : 'copy'
+    tldrawEditor.getContainer().style.cursor = subBoxDrag.isMove ? 'grabbing' : 'copy'
 
     return () => {
       document.removeEventListener('pointermove', onPointerMove)
       document.removeEventListener('pointerup', onPointerUp)
-      document.body.style.cursor = ''
+      tldrawEditor.getContainer().style.cursor = ''
       if (previewEl && document.body.contains(previewEl)) document.body.removeChild(previewEl)
     }
   }, [subBoxDrag, saveItems, removeItemById])
