@@ -1361,6 +1361,30 @@ export default function TextBlockContent({
       }
       sessionLog('gesture.textdrag-arm', { mode: 'press-drag' })
 
+      // 如果按下时已经有"选中的文字"、且按在选区内：直接把这段文字当作拖出内容。
+      // 浏览器在 mousedown 时可能收起选区，因此不能只依赖随后的实时选区。
+      const priorSel = window.getSelection()
+      let pressHasPrior = false
+      if (priorSel !== null && !priorSel.isCollapsed && priorSel.rangeCount > 0) {
+        const priorText = priorSel.toString().trim()
+        const range = priorSel.getRangeAt(0)
+        const rects = range.getClientRects()
+        const inside = Array.from(rects).some(
+          (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom,
+        )
+        if (priorText !== '' && inside) {
+          pressHasPrior = true
+          dragStateRef.current.selectedText = priorText
+          dragStateRef.current.savedRange = range.cloneRange()
+          const anchor =
+            range.startContainer.nodeType === Node.TEXT_NODE
+              ? range.startContainer.parentElement
+              : (range.startContainer as HTMLElement)
+          dragStateRef.current.itemId = (anchor?.closest('[data-item-id]') as HTMLElement | null)?.dataset.itemId ?? null
+          sessionLog('gesture.textdrag-prior', { length: priorText.length })
+        }
+      }
+
       const readSelection = (): string => {
         const sel = window.getSelection()
         return sel === null ? '' : sel.toString().trim()
@@ -1372,25 +1396,26 @@ export default function TextBlockContent({
         const dx = ev.clientX - ds.startX
         const dy = ev.clientY - ds.startY
         if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return
-        const text = readSelection()
+        const live = readSelection()
+        const text = live !== '' ? live : ds.selectedText
         if (text === '') return
         const rect = el.getBoundingClientRect()
         const outside = ev.clientX < rect.left || ev.clientX > rect.right ||
           ev.clientY < rect.top || ev.clientY > rect.bottom
         if (!outside) return
         if (!isDraggingTextRef.current) {
-          sessionLog('gesture.textdrag-out', { length: text.length })
+          sessionLog('gesture.textdrag-out', { length: text.length, source: live !== '' ? 'live' : 'prior' })
         }
         ev.preventDefault()
         ds.selectedText = text
         const sel = window.getSelection()
-        ds.savedRange = sel !== null && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
-        const anchor = ds.savedRange
-          ? (ds.savedRange.startContainer.nodeType === Node.TEXT_NODE
+        if (live !== '' && sel !== null && sel.rangeCount > 0) {
+          ds.savedRange = sel.getRangeAt(0).cloneRange()
+          const anchor = ds.savedRange.startContainer.nodeType === Node.TEXT_NODE
             ? ds.savedRange.startContainer.parentElement
-            : (ds.savedRange.startContainer as HTMLElement))
-          : null
-        ds.itemId = (anchor?.closest('[data-item-id]') as HTMLElement | null)?.dataset.itemId ?? null
+            : (ds.savedRange.startContainer as HTMLElement)
+          ds.itemId = (anchor?.closest('[data-item-id]') as HTMLElement | null)?.dataset.itemId ?? null
+        }
         setIsDraggingText(true)
         setDragPreviewPos({ x: ev.clientX, y: ev.clientY })
       }
