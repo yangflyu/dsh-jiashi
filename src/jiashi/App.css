@@ -1997,3 +1997,23 @@
 .tb-wrapper:hover .tb-drag-grip {
   opacity: 1;
 }
+
+/* ── 对话卡：消息区自动伸展，输入框贴卡片底部（卡片拉大时跟随下界） ── */
+.textblock-preview-thread {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.textblock-preview-thread .jiashi-session-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.textblock-preview-thread .jiashi-session-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+.textblock-preview-thread .ai-input-row {
+  flex: 0 0 auto;
+}

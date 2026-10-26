@@ -1636,7 +1636,7 @@ export default function TextBlockContent({
       ) : (
         /* 预览模式: items.map → MarkdownPreview / AiResponseCard 交错渲染 */
         <div
-          className="textblock-preview"
+          className={dshSessionId ? 'textblock-preview textblock-preview-thread' : 'textblock-preview'}
           // 预览态把 pointerdown 挡住：否则 tldraw 会把"在文本上按下"当成拖动卡片，
           // 文字永远选不中（选字拖出建卡的前提就是能选中文字）。
           onPointerDown={(e) => e.stopPropagation()}

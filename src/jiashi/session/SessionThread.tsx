@@ -75,7 +75,11 @@ function isInjectedRuntimeContext(text: string): boolean {
     head.startsWith('Current runtime context') ||
     head.includes('This snapshot supersedes earlier runtime-context snapshots') ||
     head.startsWith('<runtime-context') ||
-    (head.startsWith('Current working directory:') && head.includes('Current DSH file policy'))
+    (head.startsWith('Current working directory:') && head.includes('Current DSH file policy')) ||
+    // DSH 注入的 system-reminder（技能清单/环境提示等）同样以 user/message 落盘
+    head.startsWith('<system-reminder') ||
+    head.includes('<available_skills>') ||
+    head.startsWith('A skill is a reusable set of task-specific instructions')
   )
 }
 
