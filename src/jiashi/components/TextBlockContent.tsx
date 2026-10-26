@@ -1342,60 +1342,29 @@ export default function TextBlockContent({
 
     const onMouseDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null
-      // 选中文字拖出建卡：编辑态的渲染块（.tb-md-rendered）和预览态正文（.textblock-preview）
-      // 都支持；输入框/按钮/会话线程内的操作不算。
-      if (!t) return
+      // 按下处必须在卡片正文里（编辑态渲染块 / 预览态正文），输入框、按钮、会话线程除外。
+      if (!t || e.button !== 0) return
       if (t.closest('textarea, input, button, a, .jiashi-session-thread')) return
       if (!t.closest('.tb-md-rendered, .textblock-preview')) return
 
-      const sel = window.getSelection()
-      const hasPriorSelection = sel && !sel.isCollapsed
-      let insidePriorSelection = false
-      let priorText = ''
-      if (hasPriorSelection) {
-        priorText = sel!.toString().trim()
-        const range = sel!.getRangeAt(0)
-        const rects = range.getClientRects()
-        insidePriorSelection = Array.from(rects).some(r =>
-          e.clientX >= r.left && e.clientX <= r.right &&
-          e.clientY >= r.top && e.clientY <= r.bottom)
-      }
-
-      if (!hasPriorSelection || !priorText || !insidePriorSelection) {
-        if (hasPriorSelection) {
-          sessionLog('gesture.textdrag-probe', {
-            inside: insidePriorSelection,
-            length: priorText.length,
-            x: Math.round(e.clientX),
-            y: Math.round(e.clientY),
-          })
-        }
-        dragStateRef.current = { active: false, startX: 0, startY: 0, pendingCheck: false, selectedText: '', ctrlKey: false, savedRange: null, itemId: null }
-        return
-      }
-
-      // 定位选区所在 user 条目（数据级删除用）
-      const savedRange = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null
-      const ceAnchor = savedRange
-        ? (savedRange.startContainer.nodeType === Node.TEXT_NODE
-          ? savedRange.startContainer.parentElement
-          : (savedRange.startContainer as HTMLElement))
-        : null
-      const itemRow = ceAnchor?.closest('[data-item-id]') as HTMLElement | null
-
+      // 不再要求"先选好文字"：直接按下拖动就当作选字拖出。
+      // 过程中读浏览器原生的实时选区，拖出卡片外松手就建卡。
       dragStateRef.current = {
         active: true,
         startX: e.clientX,
         startY: e.clientY,
-        pendingCheck: false,
-        selectedText: priorText,
+        pendingCheck: true,
+        selectedText: '',
         ctrlKey: e.ctrlKey || e.metaKey,
-        savedRange,
-        itemId: itemRow?.dataset.itemId ?? null,
+        savedRange: null,
+        itemId: null,
       }
-      // 别让 tldraw 把这次 mousedown 当成"拖动卡片"——这次是要把选中的字拖出去。
-      e.stopPropagation()
-      sessionLog('gesture.textdrag-arm', { length: priorText.length, itemId: dragStateRef.current.itemId })
+      sessionLog('gesture.textdrag-arm', { mode: 'press-drag' })
+
+      const readSelection = (): string => {
+        const sel = window.getSelection()
+        return sel === null ? '' : sel.toString().trim()
+      }
 
       docMoveHandler = (ev: MouseEvent) => {
         const ds = dragStateRef.current
@@ -1403,38 +1372,46 @@ export default function TextBlockContent({
         const dx = ev.clientX - ds.startX
         const dy = ev.clientY - ds.startY
         if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return
-
+        const text = readSelection()
+        if (text === '') return
         const rect = el.getBoundingClientRect()
         const outside = ev.clientX < rect.left || ev.clientX > rect.right ||
           ev.clientY < rect.top || ev.clientY > rect.bottom
-
-        if (outside) {
-          if (!isDraggingTextRef.current) {
-            sessionLog('gesture.textdrag-out', { length: ds.selectedText.length })
-          }
-          ev.preventDefault()
-          setIsDraggingText(true)
-          setDragPreviewPos({ x: ev.clientX, y: ev.clientY })
+        if (!outside) return
+        if (!isDraggingTextRef.current) {
+          sessionLog('gesture.textdrag-out', { length: text.length })
         }
+        ev.preventDefault()
+        ds.selectedText = text
+        const sel = window.getSelection()
+        ds.savedRange = sel !== null && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
+        const anchor = ds.savedRange
+          ? (ds.savedRange.startContainer.nodeType === Node.TEXT_NODE
+            ? ds.savedRange.startContainer.parentElement
+            : (ds.savedRange.startContainer as HTMLElement))
+          : null
+        ds.itemId = (anchor?.closest('[data-item-id]') as HTMLElement | null)?.dataset.itemId ?? null
+        setIsDraggingText(true)
+        setDragPreviewPos({ x: ev.clientX, y: ev.clientY })
       }
 
       docUpHandler = (ev: MouseEvent) => {
         const ds = dragStateRef.current
-        if (ds.active) {
-          if (isDraggingTextRef.current) {
-            const rect = el.getBoundingClientRect()
-            const outside = ev.clientX < rect.left || ev.clientX > rect.right ||
-              ev.clientY < rect.top || ev.clientY > rect.bottom
-            if (outside && ds.selectedText) {
-              const pagePoint = editorLocal.screenToPage({ x: ev.clientX, y: ev.clientY })
-              // 语义：普通拖出 = 复制（保护原文更常见，无修饰键最顺手）；
-              //      Ctrl/⌘+拖出 = 剪切（删原文）；注意力模式（copyOnPullOut）恒复制
-              const isCut = !copyOnPullOutRef.current && ds.ctrlKey
-              if (isCut) {
-                pullDeleteRef.current(ds.itemId ?? '', ds.savedRange)
-              }
-              onPullOutRef.current?.(ds.selectedText, pagePoint.x, pagePoint.y)
+        if (ds.active && isDraggingTextRef.current) {
+          const rect = el.getBoundingClientRect()
+          const outside = ev.clientX < rect.left || ev.clientX > rect.right ||
+            ev.clientY < rect.top || ev.clientY > rect.bottom
+          const text = readSelection() || ds.selectedText
+          if (outside && text !== '') {
+            const pagePoint = editorLocal.screenToPage({ x: ev.clientX, y: ev.clientY })
+            // 语义：普通拖出 = 复制（保护原文更常见，无修饰键最顺手）；
+            //      Ctrl/⌘+拖出 = 剪切（删原文）；注意力模式（copyOnPullOut）恒复制
+            const isCut = !copyOnPullOutRef.current && ds.ctrlKey
+            if (isCut) {
+              pullDeleteRef.current(ds.itemId ?? '', ds.savedRange)
             }
+            onPullOutRef.current?.(text, pagePoint.x, pagePoint.y)
+            window.getSelection()?.removeAllRanges()
           }
           setIsDraggingText(false)
         }
@@ -1614,6 +1591,25 @@ export default function TextBlockContent({
           // 预览态把 pointerdown 挡住：否则 tldraw 会把"在文本上按下"当成拖动卡片，
           // 文字永远选不中（选字拖出建卡的前提就是能选中文字）。
           onPointerDown={(e) => e.stopPropagation()}
+          // 代价：tldraw 收不到双击，卡片无法进入编辑态。这里手动补上双击进编辑。
+          onDoubleClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            const ed = editorRef.current
+            const cur = shapeRef.current
+            if (!ed || !cur) return
+            ed.select(cur.id)
+            ed.setEditingShape(cur.id)
+          }}
+          // 单击空白处/正文：把卡片选中（否则拉手/操作都没有"当前卡"）
+          onClick={(e) => {
+            const sel = window.getSelection()
+            if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return
+            const ed = editorRef.current
+            const cur = shapeRef.current
+            if (!ed || !cur) return
+            ed.select(cur.id)
+          }}
         >
           {displayItems.map((item) => (
             <div key={item.id} className="tb-item-row" data-item-id={item.id}>
