@@ -1320,7 +1320,9 @@ export default function TextBlockContent({
   }, [])
 
   useEffect(() => {
-    if (!isEditing) return
+    // 注意：以前这里写了 `if (!isEditing) return`，导致"选中文字拖出"只在卡片进入
+    // 编辑态时才挂监听；预览态（正常看回答的状态）根本没有 mousedown 监听，
+    // 所以怎么拖都没反应。现在预览态和编辑态都挂，textarea 由 onMouseDown 里排除。
     const el = containerRef.current
     if (!el) return
     const editorLocal = editor
@@ -1360,6 +1362,14 @@ export default function TextBlockContent({
       }
 
       if (!hasPriorSelection || !priorText || !insidePriorSelection) {
+        if (hasPriorSelection) {
+          sessionLog('gesture.textdrag-probe', {
+            inside: insidePriorSelection,
+            length: priorText.length,
+            x: Math.round(e.clientX),
+            y: Math.round(e.clientY),
+          })
+        }
         dragStateRef.current = { active: false, startX: 0, startY: 0, pendingCheck: false, selectedText: '', ctrlKey: false, savedRange: null, itemId: null }
         return
       }
@@ -1446,7 +1456,7 @@ export default function TextBlockContent({
       el.removeEventListener('dragstart', preventNative)
       cleanupDocListeners()
     }
-  }, [isEditing])
+  }, [editor])
 
   // 流式中的待定回复卡片（历史回复由 items map 渲染）
   const renderPendingCard = () => {
