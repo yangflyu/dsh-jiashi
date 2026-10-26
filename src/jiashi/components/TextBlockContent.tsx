@@ -1340,9 +1340,11 @@ export default function TextBlockContent({
 
     const onMouseDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null
-      // 只在「用户文本的渲染态块」上启动拖出（源码编辑态的 textarea 里
-      // 选字拖动交给浏览器默认行为，AI 卡片有自己的复制按钮）
-      if (!t?.closest('.tb-md-rendered')) return
+      // 选中文字拖出建卡：编辑态的渲染块（.tb-md-rendered）和预览态正文（.textblock-preview）
+      // 都支持；输入框/按钮/会话线程内的操作不算。
+      if (!t) return
+      if (t.closest('textarea, input, button, a, .jiashi-session-thread')) return
+      if (!t.closest('.tb-md-rendered, .textblock-preview')) return
 
       const sel = window.getSelection()
       const hasPriorSelection = sel && !sel.isCollapsed
@@ -1381,6 +1383,9 @@ export default function TextBlockContent({
         savedRange,
         itemId: itemRow?.dataset.itemId ?? null,
       }
+      // 别让 tldraw 把这次 mousedown 当成"拖动卡片"——这次是要把选中的字拖出去。
+      e.stopPropagation()
+      sessionLog('gesture.textdrag-arm', { length: priorText.length, itemId: dragStateRef.current.itemId })
 
       docMoveHandler = (ev: MouseEvent) => {
         const ds = dragStateRef.current
@@ -1394,6 +1399,9 @@ export default function TextBlockContent({
           ev.clientY < rect.top || ev.clientY > rect.bottom
 
         if (outside) {
+          if (!isDraggingTextRef.current) {
+            sessionLog('gesture.textdrag-out', { length: ds.selectedText.length })
+          }
           ev.preventDefault()
           setIsDraggingText(true)
           setDragPreviewPos({ x: ev.clientX, y: ev.clientY })
@@ -1688,6 +1696,7 @@ export default function TextBlockContent({
               y: page.y - DEFAULT_H / 2,
               origin: 'center',
               arrow: true,
+              inheritConversation: false,
               kind: 'text',
             })
             window.getSelection()?.removeAllRanges()

@@ -654,6 +654,9 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
         y: pageY - DEFAULT_H / 2,
         origin: 'center',
         arrow: true,
+        // 侧问卡：不要继承原会话，否则提问会写回主线会话；它在第一次发 AI 消息时
+        // 会自动新建自己的 DSH 会话（"侧边继续提问、不打扰主线"）。
+        inheritConversation: false,
         kind: 'text',
       })
     }, [])
