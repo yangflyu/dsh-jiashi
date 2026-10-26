@@ -586,6 +586,53 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
     const editorRef = useRef(this.editor)
     editorRef.current = this.editor
 
+    // 自定义卡片拖动：内容区为了"选字"拦截了 pointerdown，tldraw 收不到事件，
+    // 所以整卡拖动由标题栏/「⠿ 拖动」条自己实现（屏幕位移 × 缩放换算成页面坐标）。
+    const startCardDrag = useCallback((e: React.PointerEvent) => {
+      if (e.button !== 0) return
+      // 只阻断冒泡（不让 tldraw 再处理）；不 preventDefault，避免双击事件被吃掉。
+      e.stopPropagation()
+      const ed = editorRef.current
+      const cur = shapeRef.current
+      try {
+        ed.select(cur.id)
+      } catch {
+        /* ignore */
+      }
+      const zoom = Math.max(0.01, ed.getZoomLevel())
+      const startX = e.clientX
+      const startY = e.clientY
+      const shapeX = cur.x
+      const shapeY = cur.y
+      let moved = false
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return
+        const dx = ev.clientX - startX
+        const dy = ev.clientY - startY
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 2) return
+        moved = true
+        try {
+          ed.updateShape({
+            id: cur.id,
+            type: 'text-block',
+            x: shapeX + dx / zoom,
+            y: shapeY + dy / zoom,
+          })
+        } catch {
+          /* ignore */
+        }
+      }
+      const cleanup = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', cleanup)
+        window.removeEventListener('pointercancel', cleanup)
+        if (moved) sessionLog('card.drag-end', { shapeId: cur.id })
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', cleanup)
+      window.addEventListener('pointercancel', cleanup)
+    }, [])
+
     // Pull-out drag effect — manage global listeners while dragging
     useEffect(() => {
       if (!pullDrag?.active) return
@@ -760,6 +807,7 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
           <div
             className="tb-drag-grip"
             title="拖动卡片"
+            onPointerDown={startCardDrag}
             style={{
               position: 'absolute',
               top: -15,
@@ -808,9 +856,8 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
                 setEditingTitle(true)
               }}
               onPointerDown={(e) => {
-                // 阻断 tldraw 的 pointer 事件 — 标题栏不参与拖拽/双击进入编辑
-                e.stopPropagation()
-                e.preventDefault()
+                // 标题栏 = 整卡拖动条（内容区要选字，不能再交给 tldraw 拖）
+                if (!editingTitle) startCardDrag(e)
               }}
             >
               {editingTitle ? (
