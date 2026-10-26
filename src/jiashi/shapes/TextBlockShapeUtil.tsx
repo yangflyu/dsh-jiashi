@@ -836,6 +836,9 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
               background: bgColor,
               border: `1px solid ${borderColor}`,
               borderRadius: 10,
+              // .tl-html-container 默认 pointer-events:none，子元素会继承：
+              // 卡片本体显式打开，标题栏（拖动条）才有机会收到 pointerdown。
+              pointerEvents: 'auto',
               boxShadow: isEditing
                 ? '0 0 0 2px rgba(124, 77, 255, 0.4)'
                 : isSelected
@@ -850,6 +853,7 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
             {/* 框头 — 标题栏：双击编辑，回车/失焦保存，Esc 取消 */}
             <div
               className={`tb-header${isTitlePlaceholder ? ' tb-header-placeholder' : ''}`}
+              style={{ cursor: editingTitle ? 'text' : 'grab' }}
               onDoubleClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
