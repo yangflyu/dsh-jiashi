@@ -64,23 +64,35 @@ interface ThreadMessage {
 }
 
 /**
- * DSH 在会话开头（以及部分轮次）会注入「运行时上下文」——工作目录、文件策略、
- * 审批策略等（就是本对话最前面那段 Current runtime context...）。
- * 它是以 user/message 的形式写进会话日志的，但**不是用户说的话**，
- * 画布上不该显示它（否则每张卡都像用户发了一大段系统文字）。
+ * DSH 会往会话里注入「运行时上下文」——工作目录、文件策略、审批策略、
+ * 本轮时间/时区、技能清单等（Current runtime context / Time sampled while preparing...
+ * / <system-reminder>…）。它们以消息形式写进会话日志，但**不是用户说的话**，
+ * 画布上不该显示，否则每张卡都像发了一大段系统文字。
  */
-function isInjectedRuntimeContext(text: string): boolean {
+function isInjectedContextMessage(text: string): boolean {
   const head = text.trimStart()
-  return (
-    head.startsWith('Current runtime context') ||
-    head.includes('This snapshot supersedes earlier runtime-context snapshots') ||
-    head.startsWith('<runtime-context') ||
-    (head.startsWith('Current working directory:') && head.includes('Current DSH file policy')) ||
-    // DSH 注入的 system-reminder（技能清单/环境提示等）同样以 user/message 落盘
-    head.startsWith('<system-reminder') ||
-    head.includes('<available_skills>') ||
-    head.startsWith('A skill is a reusable set of task-specific instructions')
-  )
+  const markers = [
+    'Current runtime context',
+    'This snapshot supersedes earlier runtime-context snapshots',
+    '<runtime-context',
+    '<system-reminder',
+    '<available_skills>',
+    'A skill is a reusable set of task-specific instructions',
+    'Time sampled while preparing turn',
+    'Browser time zone for this request',
+    'Interrupt otherwise-unqualified dates and times in this zone',
+    'Elapsed since the preceding model-visible message',
+  ]
+  if (markers.some((marker) => head.includes(marker))) return true
+  // 兜底：同时出现两个"环境上下文"特征就当注入
+  const hints = [
+    'Current working directory:',
+    'Current DSH file policy:',
+    'Current runtime context',
+    'Browser time zone',
+    'available_skills',
+  ]
+  return hints.filter((hint) => head.includes(hint)).length >= 2
 }
 
 /** 只取持久的 user/assistant 消息（transient 流式片段单独处理）。 */
@@ -94,7 +106,8 @@ function extractMessages(entries: readonly any[]): ThreadMessage[] {
     const data = event.data ?? {}
     const text = contentText(data.content ?? data.message?.content ?? [])
     if (text === '') continue
-    if (event.type === 'user/message' && isInjectedRuntimeContext(text)) continue
+    // 无论 user 还是 assistant，注入内容都不显示（模型偶尔会把上下文原样回显）
+    if (isInjectedContextMessage(text)) continue
     messages.push({
       role: event.type === 'user/message' ? 'user' : 'assistant',
       text,
