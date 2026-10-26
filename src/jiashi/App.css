@@ -1863,3 +1863,44 @@
   border-color: #3a3a3c;
   color: #d0d5dd;
 }
+
+/* ── 拉出手柄：默认淡显（不再只在选中时出现），悬停变亮 ── */
+.pull-handle[data-idle='1'] {
+  opacity: 0.28;
+  transform: scale(0.6);
+}
+.pull-handle[data-idle='1']:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+.pull-handle-bottom[data-idle='1'] {
+  transform: translateX(-50%) scale(0.6);
+}
+.pull-handle-bottom[data-idle='1']:hover {
+  transform: translateX(-50%) scale(1.15);
+}
+
+/* ── 选中文字后的「拖出成卡」浮动按钮 ── */
+.text-pull-create-btn {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 99998;
+  padding: 5px 12px;
+  border: 1px solid rgba(124, 77, 255, 0.5);
+  border-radius: 14px;
+  background: #ffffff;
+  color: #5b21b6;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(124, 77, 255, 0.2);
+}
+.text-pull-create-btn:hover {
+  background: #7c4dff;
+  color: #ffffff;
+}
+.tl-theme__dark .text-pull-create-btn {
+  background: #26215c;
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.5);
+}

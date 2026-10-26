@@ -20,7 +20,7 @@ import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
 
 const MAIN_KEY = 'jiashi'
 const NS = 'jiashi'
-const MODULE_VERSION = '0.11.0-pullout'
+const MODULE_VERSION = '0.12.0-pointer-diag'
 
 const zh = { 'panel.label': '画布', 'split.item': '把光标所在的子框拆成两个' }
 const en = { 'panel.label': 'Canvas', 'split.item': 'Split the focused sub-box in two' }
@@ -96,6 +96,34 @@ class BoardBoundary extends React.Component {
 function Board(props) {
   React.useEffect(() => {
     boardLog('board.mount', { version: MODULE_VERSION })
+    // 诊断：卡片的 DOM 到底能不能收到指针事件。
+    // .tl-html-container 默认 pointer-events:none；如果子元素没有显式覆盖，
+    // 卡片里的手柄/文字都点不到 —— 这是"拖出没反应"的头号嫌疑。
+    const timer = window.setTimeout(() => {
+      try {
+        const host = document.querySelector('[data-jiashi-board]')
+        const card = host?.querySelector('.tb-wrapper') ?? null
+        const htmlContainer = card?.closest('.tl-html-container') ?? null
+        const shapeEl = card?.closest('.tl-shape') ?? null
+        const rect = card?.getBoundingClientRect()
+        const hit = rect
+          ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+          : null
+        boardLog('diag.pointer', {
+          cards: host?.querySelectorAll('.tb-wrapper').length ?? 0,
+          handles: host?.querySelectorAll('.pull-handle').length ?? 0,
+          subHandles: host?.querySelectorAll('.subbox-drag-handle').length ?? 0,
+          cardPointer: card === null ? null : getComputedStyle(card).pointerEvents,
+          htmlPointer: htmlContainer === null ? null : getComputedStyle(htmlContainer).pointerEvents,
+          shapePointer: shapeEl === null ? null : getComputedStyle(shapeEl).pointerEvents,
+          hit: hit === null ? null : `${hit.tagName}.${String(hit.className ?? '').slice(0, 40)}`,
+          hitPointer: hit === null ? null : getComputedStyle(hit).pointerEvents,
+        })
+      } catch (error) {
+        boardLog('diag.pointer-failed', { error: String(error?.message ?? error) })
+      }
+    }, 2500)
+    return () => window.clearTimeout(timer)
   }, [])
   return (
     <SessionInfoProvider useSessions={props.useSessions}>

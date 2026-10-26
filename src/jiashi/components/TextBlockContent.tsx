@@ -9,6 +9,8 @@ import {
   deriveTextBlockProps,
   createChildBlock,
   mergeTextIntoBlock,
+  DEFAULT_W,
+  DEFAULT_H,
 } from '../shapes/TextBlockShapeUtil'
 import AIInputBar from './AIInputBar'
 import SessionThread from '../session/SessionThread'
@@ -644,6 +646,49 @@ export default function TextBlockContent({
   const isDraggingTextRef = useRef(false)
   useEffect(() => { isDraggingTextRef.current = isDraggingText }, [isDraggingText])
   const [dragPreviewPos, setDragPreviewPos] = useState({ x: 0, y: 0 })
+  // 选中文字后浮出的「拖出成卡」按钮（拖出创建手势的可见兜底入口）
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+  useEffect(() => {
+    if (isEditing) {
+      setSelMenu(null)
+      return
+    }
+    const el = containerRef.current
+    if (!el) return
+    const onUp = () => {
+      window.setTimeout(() => {
+        try {
+          const sel = window.getSelection()
+          if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+            setSelMenu(null)
+            return
+          }
+          const text = sel.toString().trim()
+          if (text === '') {
+            setSelMenu(null)
+            return
+          }
+          const anchor = sel.anchorNode
+          const anchorEl = anchor instanceof Element ? anchor : anchor?.parentElement ?? null
+          if (!anchorEl || !el.contains(anchorEl)) {
+            setSelMenu(null)
+            return
+          }
+          const rect = sel.getRangeAt(0).getBoundingClientRect()
+          if (rect.width === 0 && rect.height === 0) {
+            setSelMenu(null)
+            return
+          }
+          setSelMenu({ x: rect.left + rect.width / 2, y: rect.top - 34, text })
+          sessionLog('gesture.textpull-menu', { length: text.length })
+        } catch {
+          /* ignore */
+        }
+      }, 0)
+    }
+    document.addEventListener('mouseup', onUp)
+    return () => document.removeEventListener('mouseup', onUp)
+  }, [isEditing])
   // ── 右键菜单 ──
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; handler: () => void; label: string } | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -1060,6 +1105,7 @@ export default function TextBlockContent({
   ) => {
     e.stopPropagation()
     e.preventDefault()
+    sessionLog('gesture.subbox-start', { itemId: itemId ?? null, kind: kind ?? null, isMove })
     setSubBoxDrag({ itemId, kind, isMove, startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY })
   }, [])
 
@@ -1614,6 +1660,43 @@ export default function TextBlockContent({
             />
           )}
         </div>
+      )}
+
+      {/* 选中文字 → 浮出「拖出成卡」按钮（Portal 到 body） */}
+      {selMenu && !isEditing && createPortal(
+        <button
+          type="button"
+          className="text-pull-create-btn"
+          style={{ left: selMenu.x, top: selMenu.y }}
+          title="把选中的文字拖成一张新卡（这条是拖出手势的可见兜底）"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            const ed = editorRef.current
+            const cur = shapeRef.current
+            if (!ed || !cur) return
+            const screen = { x: selMenu.x, y: selMenu.y + 90 }
+            const page = ed.screenToPage(screen)
+            sessionLog('gesture.textpull-click', { length: selMenu.text.length })
+            createChildBlock(ed, {
+              parentId: cur.id,
+              text: selMenu.text,
+              x: page.x - DEFAULT_W / 2,
+              y: page.y - DEFAULT_H / 2,
+              origin: 'center',
+              arrow: true,
+              kind: 'text',
+            })
+            window.getSelection()?.removeAllRanges()
+            setSelMenu(null)
+          }}
+        >
+          拖出成卡
+        </button>,
+        document.body
       )}
 
       {/* 选中文字拖出浮动预览 — Portal 到 body */}

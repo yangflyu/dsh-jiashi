@@ -629,6 +629,7 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
     const startPullOut = useCallback((origin: PullOrigin) => (e: React.PointerEvent) => {
       e.stopPropagation()
       e.preventDefault()
+      sessionLog('gesture.pull-start', { origin, shapeId: shapeRef.current.id })
       ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
       setPullDrag({
         active: true,
@@ -675,7 +676,9 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
 
     // ── Pull-out preview line ────────────────────────────────────
 
-    const showHandles = isSelected && !pullDrag?.active
+    // 拉出手柄：不再只在"选中"时出现——淡显在卡片边缘、悬停变亮，
+    // 避免用户根本不知道这三个拖出入口存在（文档也说这类手势完全没有按钮提示）。
+    const showHandles = !pullDrag?.active
 
     // Calculate preview line in page coordinates
     let previewLine: { x1: number; y1: number; x2: number; y2: number } | null = null
@@ -798,16 +801,19 @@ export class TextBlockShapeUtil extends ShapeUtil<TextBlockShape> {
             <>
               <div
                 className="pull-handle pull-handle-bottom"
+                data-idle={isSelected ? '0' : '1'}
                 title="拖出：向下新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('bottom')}
               />
               <div
                 className="pull-handle pull-handle-right"
+                data-idle={isSelected ? '0' : '1'}
                 title="拖出：向右新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('right')}
               />
               <div
                 className="pull-handle pull-handle-left"
+                data-idle={isSelected ? '0' : '1'}
                 title="拖出：向左新建一张空子卡（自动连线）"
                 onPointerDown={startPullOut('left')}
               />
