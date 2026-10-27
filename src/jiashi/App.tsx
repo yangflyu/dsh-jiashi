@@ -26,7 +26,7 @@ type AppMode = 'canvas' | 'linear'
  * Toolbar — overlays on top of tldraw canvas.
  * Only rendered in canvas mode. In linear mode, LinearView has its own bar.
  */
-function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard, onAddChildCard, onCleanEmptyCards }: {
+function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard, onAddChildCard, onCleanEmptyCards, onClearBoard }: {
   onToggleMode: () => void
   onOpenSettings: () => void
   onOpenShortcuts: () => void
@@ -35,6 +35,7 @@ function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggle
   onCreateSessionCard: () => void
   onAddChildCard: () => void
   onCleanEmptyCards: () => void
+  onClearBoard: () => void
 }) {
   const editor = useEditor()
 
@@ -119,6 +120,17 @@ function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggle
           <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
         </svg>
         <span className="toolbar-label">清理空卡</span>
+      </button>
+
+      {/* 清空画布：删除当前页所有卡片（可撤销；不删除 DSH 会话本身） */}
+      <button className="toolbar-btn" onClick={onClearBoard} title="清空画布：删除当前页所有卡片与连线（可撤销，不删 DSH 会话）">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="3" y1="9" x2="21" y2="9" />
+          <line x1="9" y1="20" x2="9" y2="9" />
+          <path d="M13 13l5 5M18 13l-5 5" />
+        </svg>
+        <span className="toolbar-label">清空画布</span>
       </button>
 
       {/* Attention / focus mode */}
@@ -458,6 +470,26 @@ export default function App() {
   // Initialize database and conversation store on mount
   useEffect(() => { initStore() }, [])
 
+  // 一次性清空画布（用户要求）：只执行一次，之后正常使用不受影响
+  useEffect(() => {
+    if (!editor) return
+    try {
+      const key = 'jiashi-clear-once-v1'
+      if (window.localStorage.getItem(key) === 'done') return
+      const shapes = editor.getCurrentPageShapes()
+      if (shapes.length > 0) {
+        editor.batch(() => {
+          editor.deleteShapes(shapes.map((shape) => shape.id))
+        })
+        editor.selectNone()
+        sessionLog('board.clear-once', { count: shapes.length })
+      }
+      window.localStorage.setItem(key, 'done')
+    } catch {
+      /* ignore */
+    }
+  }, [editor])
+
   // ── 进入 / 退出注意力布局（只有一层：专注里再聚焦 = 切换焦点） ──
   const enterAttention = useCallback((editor: Editor, shapeId: string) => {
     // 切换焦点：先把旧专注布局还原，再按新焦点重新布局（快照始终是普通画布状态）
@@ -724,6 +756,22 @@ export default function App() {
     sessionLog('cards.clean-empty', { count: ids.size, arrows: arrows.length })
   }, [editor])
 
+  // 清空画布：删除当前页所有卡片/连线（只删画布数据，不删 DSH 会话；tldraw 可撤销）
+  const clearBoard = useCallback(() => {
+    if (!editor) return
+    if (attentionActive) exitAttention(editor)
+    const ids = editor.getCurrentPageShapes().map((shape) => shape.id)
+    if (ids.length === 0) {
+      sessionLog('board.clear', { count: 0 })
+      return
+    }
+    editor.batch(() => {
+      editor.deleteShapes(ids)
+    })
+    editor.selectNone()
+    sessionLog('board.clear', { count: ids.length })
+  }, [editor, attentionActive, exitAttention])
+
   // Build root class: adds `linear-mode-active` to hide tldraw canvas
   // and save GPU/CPU when LinearView is covering it.
   const rootClass =
@@ -783,6 +831,7 @@ export default function App() {
             onCreateSessionCard={createSessionCard}
             onAddChildCard={addChildCard}
             onCleanEmptyCards={cleanEmptyCards}
+            onClearBoard={clearBoard}
           />
         )}
         {mode === 'linear' && <LinearView onBackToCanvas={toggleMode} />}
