@@ -382,6 +382,18 @@ function AttentionPanInterceptor({
   )
 }
 
+/**
+ * 注意力模式的跨卸载存续状态。
+ * 主面板切走时 App 整个卸载，useState/ref 全部丢失 → 回来时会出现
+ * "画布还是名片态、但聚焦框没了、Esc 也退出不了"的半状态。
+ * 状态存到模块级变量里，切回来时可以恢复（含退出用的布局快照）。
+ */
+const attentionSession: {
+  active: boolean
+  focusedId: string | null
+  snapshot: AttnLayoutSnapshot | null
+} = { active: false, focusedId: null, snapshot: null }
+
 export default function App() {
   const [mode, setMode] = useState<AppMode>('canvas')
   const [showSettings, setShowSettings] = useState(false)
@@ -389,10 +401,54 @@ export default function App() {
   const [editor, setEditor] = useState<Editor | null>(null)
 
   // ── 注意力模式状态 ──
-  const [attentionActive, setAttentionActive] = useState(false)
-  const [attentionFocusedId, setAttentionFocusedId] = useState<string | null>(null)
+  const [attentionActive, setAttentionActive] = useState(() => attentionSession.active)
+  const [attentionFocusedId, setAttentionFocusedId] = useState<string | null>(() => attentionSession.focusedId)
   // 布局快照：进入时保存的原位置/透明度/相机，退出时还原
-  const attnSnapshotRef = useRef<AttnLayoutSnapshot | null>(null)
+  const attnSnapshotRef = useRef<AttnLayoutSnapshot | null>(attentionSession.snapshot)
+
+  // 状态变化随时同步到模块级存续对象（含快照），面板切走再回来才能恢复
+  useEffect(() => {
+    attentionSession.active = attentionActive
+    attentionSession.focusedId = attentionFocusedId
+    attentionSession.snapshot = attnSnapshotRef.current
+  }, [attentionActive, attentionFocusedId])
+
+  // 面板切回来时：恢复注意力状态；若聚焦卡已不存在，干净地退出/清理残留
+  useEffect(() => {
+    if (!editor) return
+    if (!attentionSession.active) {
+      // 旧版本留下的半状态：形状上带 attn 但会话状态没了 → 清掉 attn，恢复普通卡片渲染
+      const strays = editor
+        .getCurrentPageShapes()
+        .filter((s) => s.type === 'text-block' && (s.props as { attn?: unknown }).attn !== undefined)
+      if (strays.length > 0) {
+        editor.batch(() => {
+          for (const stray of strays) {
+            editor.updateShape({ id: stray.id, type: 'text-block', props: { attn: undefined } as never })
+          }
+        })
+        sessionLog('attention.clear-stale', { count: strays.length })
+      }
+      return
+    }
+    const id = attentionSession.focusedId
+    if (id === null) return
+    const shape = editor.getShape(id)
+    if (shape === undefined) {
+      if (attentionSession.snapshot !== null) exitAttentionLayout(editor, attentionSession.snapshot)
+      attentionSession.active = false
+      attentionSession.focusedId = null
+      attentionSession.snapshot = null
+      setAttentionActive(false)
+      setAttentionFocusedId(null)
+      sessionLog('attention.restore-failed', { shapeId: id })
+      return
+    }
+    attnSnapshotRef.current = attentionSession.snapshot
+    setAttentionActive(true)
+    setAttentionFocusedId(id)
+    sessionLog('attention.restore', { shapeId: id })
+  }, [editor])
 
   // Initialize database and conversation store on mount
   useEffect(() => { initStore() }, [])
