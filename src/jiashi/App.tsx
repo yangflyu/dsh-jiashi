@@ -388,11 +388,18 @@ function AttentionPanInterceptor({
  * "画布还是名片态、但聚焦框没了、Esc 也退出不了"的半状态。
  * 状态存到模块级变量里，切回来时可以恢复（含退出用的布局快照）。
  */
+interface AttnLevel {
+  focusedId: string | null
+  snapshot: AttnLayoutSnapshot
+}
+
 const attentionSession: {
   active: boolean
   focusedId: string | null
   snapshot: AttnLayoutSnapshot | null
-} = { active: false, focusedId: null, snapshot: null }
+  /** 上一层专注（从专注里再点开更深一层时入栈，Esc 逐层退出） */
+  stack: AttnLevel[]
+} = { active: false, focusedId: null, snapshot: null, stack: [] }
 
 export default function App() {
   const [mode, setMode] = useState<AppMode>('canvas')
@@ -405,12 +412,20 @@ export default function App() {
   const [attentionFocusedId, setAttentionFocusedId] = useState<string | null>(() => attentionSession.focusedId)
   // 布局快照：进入时保存的原位置/透明度/相机，退出时还原
   const attnSnapshotRef = useRef<AttnLayoutSnapshot | null>(attentionSession.snapshot)
+  // 专注层级栈：在专注模式里继续聚焦更深一层的卡时入栈
+  const attnStackRef = useRef<AttnLevel[]>(attentionSession.stack.slice())
+  // 给回调用的最新值（避免 useCallback([]) 里的过期闭包）
+  const attentionActiveRef = useRef(attentionActive)
+  attentionActiveRef.current = attentionActive
+  const attentionFocusedIdRef = useRef(attentionFocusedId)
+  attentionFocusedIdRef.current = attentionFocusedId
 
-  // 状态变化随时同步到模块级存续对象（含快照），面板切走再回来才能恢复
+  // 状态变化随时同步到模块级存续对象（含快照/层级栈），面板切走再回来才能恢复
   useEffect(() => {
     attentionSession.active = attentionActive
     attentionSession.focusedId = attentionFocusedId
     attentionSession.snapshot = attnSnapshotRef.current
+    attentionSession.stack = attnStackRef.current.slice()
   }, [attentionActive, attentionFocusedId])
 
   // 面板切回来时：恢复注意力状态；若聚焦卡已不存在，干净地退出/清理残留
@@ -455,8 +470,15 @@ export default function App() {
 
   // ── 进入 / 退出注意力布局（统一走这里，保证 snapshot 一致） ──
   const enterAttention = useCallback((editor: Editor, shapeId: string) => {
-    // 若已有快照先还原（避免残留）
-    if (attnSnapshotRef.current) {
+    if (attentionActiveRef.current && attnSnapshotRef.current !== null) {
+      // 已经在专注模式：把当前层压栈，进入下一层（不还原旧布局）
+      attnStackRef.current.push({
+        focusedId: attentionFocusedIdRef.current,
+        snapshot: attnSnapshotRef.current,
+      })
+      sessionLog('attention.push', { depth: attnStackRef.current.length, shapeId })
+    } else if (attnSnapshotRef.current !== null) {
+      // 有残留快照但状态未激活：先还原，避免脏布局
       exitAttentionLayout(editor, attnSnapshotRef.current)
       attnSnapshotRef.current = null
     }
@@ -469,7 +491,20 @@ export default function App() {
   const exitAttention = useCallback((editor: Editor) => {
     // 若正处在"名片展开编辑"状态，先退出编辑（触发 onEditEnd 缩回）
     if (editor.getEditingShapeId()) editor.setEditingShape(null)
-    if (attnSnapshotRef.current) {
+    // 还有上一层专注？还原到上一层，而不是直接退出整个模式
+    const stack = attnStackRef.current
+    if (stack.length > 0) {
+      const prev = stack.pop() as AttnLevel
+      if (attnSnapshotRef.current !== null) {
+        exitAttentionLayout(editor, attnSnapshotRef.current)
+      }
+      attnSnapshotRef.current = prev.snapshot
+      setAttentionActive(true)
+      setAttentionFocusedId(prev.focusedId)
+      sessionLog('attention.pop', { depth: stack.length, shapeId: prev.focusedId })
+      return
+    }
+    if (attnSnapshotRef.current !== null) {
       exitAttentionLayout(editor, attnSnapshotRef.current)
       attnSnapshotRef.current = null
     }
@@ -500,11 +535,10 @@ export default function App() {
         )
         if (attentionActive) {
           if (isTextBlock && shape.id !== (attentionFocusedId as TLShapeId)) {
-            // 切到新框：先退出旧布局还原，再进入新布局
-            exitAttention(editor)
+            // 在专注模式里选中了另一张卡：进入更深一层（押栈，Esc 可逐层退回）
             enterAttention(editor, shape.id as string)
           } else {
-            // 同一框或无选中 → 退出
+            // 同一框或无选中 → 退出（有上一层则退回上一层）
             exitAttention(editor)
           }
         } else {
