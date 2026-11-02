@@ -1457,6 +1457,9 @@ export default function TextBlockContent({
         savedRange: priorInfo?.range ?? null,
         itemId: priorInfo?.itemId ?? null,
       }
+      // 已有选区时：阻止浏览器在这次拖动里"继续扩选"，否则会把拖出路径上经过的字
+      // 也加进选区，最后拉出来的是错误的内容。
+      if (priorInfo !== null) e.preventDefault()
       sessionLog('gesture.textdrag-arm', { mode: priorInfo === null ? 'press-drag' : 'prior' })
 
       docMoveHandler = (ev: MouseEvent) => {
@@ -1465,20 +1468,21 @@ export default function TextBlockContent({
         const dx = ev.clientX - ds.startX
         const dy = ev.clientY - ds.startY
         if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return
+        // 有预选内容时锁定它，绝不用拖动过程中"顺手选中"的字符覆盖
         const live = readSelection()
-        const text = live !== '' ? live : ds.selectedText
+        const text = ds.selectedText !== '' ? ds.selectedText : live
         if (text === '') return
         const rect = el.getBoundingClientRect()
         const outside = ev.clientX < rect.left || ev.clientX > rect.right ||
           ev.clientY < rect.top || ev.clientY > rect.bottom
         if (!outside) return
         if (!isDraggingTextRef.current) {
-          sessionLog('gesture.textdrag-out', { length: text.length, source: live !== '' ? 'live' : 'prior' })
+          sessionLog('gesture.textdrag-out', { length: text.length, source: ds.selectedText !== '' ? 'prior' : 'live' })
         }
         ev.preventDefault()
         ds.selectedText = text
         const sel = window.getSelection()
-        if (live !== '' && sel !== null && sel.rangeCount > 0) {
+        if (ds.selectedText === '' && live !== '' && sel !== null && sel.rangeCount > 0) {
           ds.savedRange = sel.getRangeAt(0).cloneRange()
           const anchor = ds.savedRange.startContainer.nodeType === Node.TEXT_NODE
             ? ds.savedRange.startContainer.parentElement
@@ -1495,7 +1499,7 @@ export default function TextBlockContent({
           const rect = el.getBoundingClientRect()
           const outside = ev.clientX < rect.left || ev.clientX > rect.right ||
             ev.clientY < rect.top || ev.clientY > rect.bottom
-          const text = readSelection() || ds.selectedText
+          const text = ds.selectedText !== '' ? ds.selectedText : readSelection()
           if (outside && text !== '') {
             const pagePoint = editorLocal.screenToPage({ x: ev.clientX, y: ev.clientY })
             // 语义：普通拖出 = 复制（保护原文更常见，无修饰键最顺手）；

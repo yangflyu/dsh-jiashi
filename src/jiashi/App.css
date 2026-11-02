@@ -2044,3 +2044,27 @@
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* ── 强约束：对话卡在预览/编辑/专注展开态下，线程占满剩余高度，输入框贴底 ── */
+.textblock-content {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+}
+.textblock-content > .textblock-preview-thread,
+.textblock-content > .textblock-editor-wrapper {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+}
+.textblock-preview-thread > .jiashi-session-thread,
+.textblock-editor-wrapper > .jiashi-session-thread {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+.textblock-preview-thread .jiashi-session-messages,
+.textblock-editor-wrapper .jiashi-session-messages {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
