@@ -1574,6 +1574,10 @@ export default function TextBlockContent({
           cursor: isEditing ? 'text' : 'pointer',
           wordBreak: 'break-word',
           position: 'relative',
+          // 内联兜底：保证对话卡里"线程填满、输入框贴底"的布局不受外部 CSS 影响
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
         }}
     >
       {/* Conversation tag — shown in preview mode */}
@@ -1593,6 +1597,7 @@ export default function TextBlockContent({
         <div
           className="textblock-editor-wrapper"
           onPointerDown={(e) => e.stopPropagation()}
+          style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}
         >
           {/* 顶部插入槽 */}
           <InsertSlot onInsert={() => handleInsertUser(0)} />
@@ -1687,6 +1692,7 @@ export default function TextBlockContent({
         /* 预览模式: items.map → MarkdownPreview / AiResponseCard 交错渲染 */
         <div
           className={dshSessionId ? 'textblock-preview textblock-preview-thread' : 'textblock-preview'}
+          style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}
           // 预览态把 pointerdown 挡住：否则 tldraw 会把"在文本上按下"当成拖动卡片，
           // 文字永远选不中（选字拖出建卡的前提就是能选中文字）。
           onPointerDown={(e) => e.stopPropagation()}

@@ -315,7 +315,14 @@ function SessionThreadInner({
       data-jiashi-session={face.sessionId}
       onPointerDown={stopPointer}
       onWheel={stopPointer}
-      style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+      style={{
+        userSelect: 'text',
+        WebkitUserSelect: 'text',
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 auto',
+        minHeight: 0,
+      }}
     >
       <div className="jiashi-session-head">
         <span className="jiashi-session-dot" data-running={snapshot.running ? '1' : '0'} />
@@ -351,7 +358,12 @@ function SessionThreadInner({
         </button>
       </div>
 
-      <div ref={listRef} className="jiashi-session-messages" data-compact={compact ? '1' : '0'}>
+      <div
+        ref={listRef}
+        className="jiashi-session-messages"
+        data-compact={compact ? '1' : '0'}
+        style={{ flex: '1 1 auto', minHeight: 0, maxHeight: 'none' }}
+      >
         {messages.length === 0 && liveText === '' ? (
           <div className="jiashi-session-empty">还没有消息。在下面输入，会和原生对话写进同一个会话。</div>
         ) : (
@@ -406,7 +418,7 @@ function SessionThreadInner({
 
       {sendError === '' ? null : <div className="jiashi-session-error">{sendError}</div>}
 
-      <div className="ai-input-row">
+      <div className="ai-input-row" style={{ flex: '0 0 auto' }}>
         <input
           type="text"
           className="ai-input-field"
