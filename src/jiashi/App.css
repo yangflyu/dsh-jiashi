@@ -2068,3 +2068,22 @@
   min-height: 0 !important;
   max-height: none !important;
 }
+
+/* ── 专注模式放大镜（lens）里的编辑视图：让内容撑满镜头高度，
+      会话线程才能占满剩余空间、输入框贴到镜头底部 ── */
+.attn-lens-scale {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.attn-lens-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.attn-lens-content > .textblock-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100% !important;
+}
