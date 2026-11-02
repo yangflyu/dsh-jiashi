@@ -1594,10 +1594,11 @@ export default function TextBlockContent({
         /* 编辑模式: items.map → 自文本「块级混合编辑器」 + AI 卡片，交错渲染
          *   · 文本保持渲染外观，点中某一块才就地变源码（Typora 式）
          *   · Ctrl+\ 在块内光标处拆块；条目间插入槽用于插入新片段 */
+        <>
         <div
           className="textblock-editor-wrapper"
           onPointerDown={(e) => e.stopPropagation()}
-          style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}
+          style={{ display: 'flex', flexDirection: 'column', flex: '0 1 auto', minHeight: 0, overflow: 'auto' }}
         >
           {/* 顶部插入槽 */}
           <InsertSlot onInsert={() => handleInsertUser(0)} />
@@ -1661,33 +1662,34 @@ export default function TextBlockContent({
 
           {/* 流式中的待定回复 */}
           {renderPendingCard()}
-
-          {/* AI 输入栏 / DSH 会话线程 */}
-          {dshSessionId ? (
-            <SessionThread
-              sessionId={dshSessionId}
-              isDarkMode={isDarkMode}
-              fromSeq={sessionFromSeq}
-              toSeq={sessionToSeq}
-              onSplit={handleSessionSplit}
-              onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
-              pendingPrompt={pendingDshPrompt ?? undefined}
-              onPendingPromptConsumed={() => setPendingDshPrompt(null)}
-              onPullText={(text) => handlePullNoteFromText(text)}
-            />
-          ) : (
-            <AIInputBar
-              contentText={fragments[0] || ''}
-              conversationId={activeCid}
-              onConversationChange={handleConversationChange}
-              contextContents={contextContents}
-              onAiStreamStart={handleAiStreamStart}
-              onAiStreamUpdate={handleAiStreamUpdate}
-              onAiStreamEnd={handleAiStreamEnd}
-              onDshSend={handleDshSend}
-            />
-          )}
         </div>
+        {/* AI 输入栏 / DSH 会话线程：放在编辑容器外，作为卡片内容区的弹性子项，
+            这样线程能占满剩余高度、输入框贴卡片底部 */}
+        {dshSessionId ? (
+          <SessionThread
+            sessionId={dshSessionId}
+            isDarkMode={isDarkMode}
+            fromSeq={sessionFromSeq}
+            toSeq={sessionToSeq}
+            onSplit={handleSessionSplit}
+            onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
+            pendingPrompt={pendingDshPrompt ?? undefined}
+            onPendingPromptConsumed={() => setPendingDshPrompt(null)}
+            onPullText={(text) => handlePullNoteFromText(text)}
+          />
+        ) : (
+          <AIInputBar
+            contentText={fragments[0] || ''}
+            conversationId={activeCid}
+            onConversationChange={handleConversationChange}
+            contextContents={contextContents}
+            onAiStreamStart={handleAiStreamStart}
+            onAiStreamUpdate={handleAiStreamUpdate}
+            onAiStreamEnd={handleAiStreamEnd}
+            onDshSend={handleDshSend}
+          />
+        )}
+        </>
       ) : (
         /* 预览模式: items.map → MarkdownPreview / AiResponseCard 交错渲染 */
         <div
