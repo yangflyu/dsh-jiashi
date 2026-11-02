@@ -434,17 +434,21 @@ export default function App() {
   useEffect(() => {
     if (!editor) return
     if (!attentionSession.active) {
-      // 旧版本留下的半状态：形状上带 attn 但会话状态没了 → 清掉 attn，恢复普通卡片渲染
-      const strays = editor
-        .getCurrentPageShapes()
-        .filter((s) => s.type === 'text-block' && (s.props as { attn?: unknown }).attn !== undefined)
-      if (strays.length > 0) {
+      // 旧版本留下的半状态：形状上带 attn / 被专注模式压暗但状态没了 →
+      // 清掉 attn、恢复不透明度（否则卡片会"消失"，只剩指向它的箭头）。
+      const allShapes = editor.getCurrentPageShapes()
+      const strays = allShapes.filter((s) => s.type === 'text-block' && (s.props as { attn?: unknown }).attn !== undefined)
+      const dimmed = allShapes.filter((s) => (s.opacity ?? 1) < 0.99)
+      if (strays.length > 0 || dimmed.length > 0) {
         editor.batch(() => {
           for (const stray of strays) {
             editor.updateShape({ id: stray.id, type: 'text-block', props: { attn: undefined } as never })
           }
+          for (const shape of dimmed) {
+            editor.updateShape({ id: shape.id, type: shape.type, opacity: 1 } as never)
+          }
         })
-        sessionLog('attention.clear-stale', { count: strays.length })
+        sessionLog('attention.clear-stale', { attn: strays.length, dimmed: dimmed.length })
       }
       return
     }
@@ -469,26 +473,6 @@ export default function App() {
 
   // Initialize database and conversation store on mount
   useEffect(() => { initStore() }, [])
-
-  // 一次性清空画布（用户要求）：只执行一次，之后正常使用不受影响
-  useEffect(() => {
-    if (!editor) return
-    try {
-      const key = 'jiashi-clear-once-v1'
-      if (window.localStorage.getItem(key) === 'done') return
-      const shapes = editor.getCurrentPageShapes()
-      if (shapes.length > 0) {
-        editor.batch(() => {
-          editor.deleteShapes(shapes.map((shape) => shape.id))
-        })
-        editor.selectNone()
-        sessionLog('board.clear-once', { count: shapes.length })
-      }
-      window.localStorage.setItem(key, 'done')
-    } catch {
-      /* ignore */
-    }
-  }, [editor])
 
   // ── 进入 / 退出注意力布局（只有一层：专注里再聚焦 = 切换焦点） ──
   const enterAttention = useCallback((editor: Editor, shapeId: string) => {
