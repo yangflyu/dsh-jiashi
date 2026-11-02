@@ -2087,3 +2087,20 @@
   min-height: 0;
   height: 100% !important;
 }
+
+/* ── 修正：编辑容器按内容高度占位（之前的 height:100% !important / flex:1 !important
+      会覆盖内联样式，把编辑区撑大、把线程挤到中间）。线程才是占满剩余高度的那个。 ── */
+.textblock-content > .textblock-editor-wrapper {
+  flex: 0 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+.textblock-content > .textblock-preview-thread {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+.textblock-content > .jiashi-session-thread {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
