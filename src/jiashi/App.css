@@ -2104,3 +2104,61 @@
   flex: 1 1 auto !important;
   min-height: 0 !important;
 }
+
+/* ── 对话块条目（卡内自文本/对话块平级交错） ── */
+.jiashi-thread-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  border-bottom: 1px dashed rgba(120, 130, 160, 0.25);
+}
+.jiashi-thread-block-label {
+  font-weight: 600;
+  color: #4f7cff;
+}
+.jiashi-thread-block-sub {
+  color: #98a2b3;
+}
+.jiashi-add-thread-row {
+  display: flex;
+  justify-content: flex-start;
+  padding: 2px 0 6px;
+  flex: 0 0 auto;
+}
+.jiashi-add-thread-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px dashed #c7cede;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+}
+.jiashi-add-thread-btn:hover {
+  border-color: #7c4dff;
+  color: #7c4dff;
+}
+
+/* 插入槽 hover 时右端的「＋对话」按钮 */
+.jiashi-insert-thread-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px dashed #b9c2d6;
+  background: #ffffff;
+  color: #667085;
+  cursor: pointer;
+  z-index: 5;
+}
+.jiashi-insert-thread-btn:hover {
+  border-color: #7c4dff;
+  color: #7c4dff;
+}

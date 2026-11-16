@@ -38,10 +38,22 @@ export interface AiResponseEntry {
   activeVersionIdx: number  // 当前显示哪个版本
 }
 
-// 混合条目：文本框内有序内容列表（自文本 / AI 回复可任意交错）
+// 对话块：卡片内的一段 DSH 会话（与自文本、AI 回复卡平级，可任意交错）
+export interface ThreadItem {
+  /** 绑定的 DSH 会话 id */
+  sessionId: string
+  /** 显示范围（seq，含）——undefined = 全部 */
+  fromSeq?: number
+  toSeq?: number
+  /** 可选显示名（为空时用会话标题） */
+  title?: string
+}
+
+// 混合条目：文本框内有序内容列表（自文本 / 对话块 / AI 回复可任意交错）
 export type MixedItem =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'ai'; id: string; ai: AiResponseEntry }
+  | { kind: 'thread'; id: string; thread: ThreadItem }
 
 /** `items` 可以派生出的全部「兼容字段」 */
 export interface DerivedTextBlockProps {
@@ -121,6 +133,16 @@ const mixedItemValidator = T.union('kind', {
     kind: T.literal('ai'),
     id: T.string,
     ai: aiResponseEntryValidator,
+  }),
+  thread: T.object({
+    kind: T.literal('thread'),
+    id: T.string,
+    thread: T.object({
+      sessionId: T.string,
+      fromSeq: T.number.optional(),
+      toSeq: T.number.optional(),
+      title: T.string.optional(),
+    }),
   }),
 })
 
@@ -218,6 +240,33 @@ function legacyItemsFromProps(props: TextBlockShape['props']): MixedItem[] {
   for (const text of texts) items.push({ kind: 'user', id: createShapeId(), text })
   for (const ai of props.aiResponses) items.push({ kind: 'ai', id: createShapeId(), ai })
   return items
+}
+
+/**
+ * 把旧模型（卡级 conversationId + sessionFromSeq/ToSeq）规范成"末尾一个对话块条目"。
+ * 这样渲染只需要认识 items 里的 thread 条目，旧卡片也自动获得一个对话块；
+ * 已显式存在同会话的 thread 条目时不重复添加。
+ */
+export function itemsWithLegacyThread(
+  items: MixedItem[],
+  props: TextBlockShape['props'],
+): MixedItem[] {
+  const primary = props.conversationId
+  if (primary === undefined || primary === '' || !isDshSessionId(primary)) return items
+  if (items.some((item) => item.kind === 'thread' && item.thread.sessionId === primary)) return items
+  return [
+    ...items,
+    {
+      kind: 'thread',
+      id: 'primary-thread',
+      thread: { sessionId: primary, fromSeq: props.sessionFromSeq, toSeq: props.sessionToSeq },
+    },
+  ]
+}
+
+/** 取卡片里的第一个对话块作为"主会话"（标题/打开/拆分合并用它）。 */
+export function primaryThreadItem(items: MixedItem[]): Extract<MixedItem, { kind: 'thread' }> | undefined {
+  return items.find((item): item is Extract<MixedItem, { kind: 'thread' }> => item.kind === 'thread')
 }
 
 /** 拖出创建的统一实现，返回新块 id。 */

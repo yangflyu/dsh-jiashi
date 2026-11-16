@@ -163,6 +163,13 @@ export default function SessionThread({
   onPullText?: (text: string) => void
 }) {
   const { entry, error } = useSessionEntry(sessionId)
+  // 诊断：对话块挂载时记一条（卡内条目渲染路径的可见证据）
+  useEffect(() => {
+    if (entry !== null && error === null) {
+      sessionLog('thread.mount', { sessionId, fromSeq, toSeq, compact })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry !== null, error === null])
   if (error !== null) {
     return <div className="jiashi-session-error">会话打不开：{String(error.message ?? error)}</div>
   }

@@ -9,6 +9,7 @@ import {
   deriveTextBlockProps,
   createChildBlock,
   mergeTextIntoBlock,
+  itemsWithLegacyThread,
   DEFAULT_W,
   DEFAULT_H,
   PULL_NOTE_W,
@@ -136,14 +137,15 @@ function SubBoxDragHandle({
 
 // InsertSlot — 条目之间的插入槽（编辑模式）：一条细虚线，点击插入新的自文本
 //   无文字/无圆点/无图标；整条线区域可点（高度很小），hover 变紫
-function InsertSlot({ onInsert }: { onInsert: () => void }) {
+//   hover 时右端额外出现「＋对话」小按钮：在该位置插入一段对话块
+function InsertSlot({ onInsert, onInsertThread }: { onInsert: () => void; onInsertThread?: () => void }) {
   const [hovered, setHovered] = useState(false)
   return (
     <div
       onClick={onInsert}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      title="在此插入自文本"
+      title="在此插入自文本（hover 右端可插入对话块）"
       style={{
         height: 12,
         margin: '1px 0',
@@ -152,6 +154,7 @@ function InsertSlot({ onInsert }: { onInsert: () => void }) {
         cursor: 'pointer',
         userSelect: 'none',
         flexShrink: 0,
+        position: 'relative',
       }}
     >
       <div
@@ -165,6 +168,21 @@ function InsertSlot({ onInsert }: { onInsert: () => void }) {
           transition: 'opacity 0.15s',
         }}
       />
+      {onInsertThread && hovered && (
+        <button
+          type="button"
+          className="jiashi-insert-thread-btn"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            onInsertThread()
+          }}
+          title="在此插入一段对话块（新建独立会话）"
+        >
+          ＋对话
+        </button>
+      )}
     </div>
   )
 }
@@ -754,20 +772,26 @@ export default function TextBlockContent({
 
   // ── 有序混合条目 items ──
   // 优先使用 props.items（新格式）；旧数据迁移：user 片段在前 + AI 回复在后
+  // 旧模型（卡级 conversationId）会被规范成末尾一个 thread 条目，渲染层只认识 items。
   const items = useMemo<MixedItem[]>(() => {
-    if (itemsProp && itemsProp.length > 0) return itemsProp
-    const migrated: MixedItem[] = []
-    const userTexts = userTextFragments.length > 0
-      ? userTextFragments
-      : (content.trim() ? [content] : [])
-    for (let i = 0; i < userTexts.length; i++) {
-      migrated.push({ kind: 'user', id: `legacy-user-${i}`, text: userTexts[i] })
+    let base: MixedItem[]
+    if (itemsProp && itemsProp.length > 0) {
+      base = itemsProp
+    } else {
+      const migrated: MixedItem[] = []
+      const userTexts = userTextFragments.length > 0
+        ? userTextFragments
+        : (content.trim() ? [content] : [])
+      for (let i = 0; i < userTexts.length; i++) {
+        migrated.push({ kind: 'user', id: `legacy-user-${i}`, text: userTexts[i] })
+      }
+      for (let i = 0; i < aiResponses.length; i++) {
+        migrated.push({ kind: 'ai', id: `legacy-ai-${i}`, ai: aiResponses[i] })
+      }
+      base = migrated
     }
-    for (let i = 0; i < aiResponses.length; i++) {
-      migrated.push({ kind: 'ai', id: `legacy-ai-${i}`, ai: aiResponses[i] })
-    }
-    return migrated
-  }, [itemsProp, userTextFragments, aiResponses, content])
+    return itemsWithLegacyThread(base, shape.props)
+  }, [itemsProp, userTextFragments, aiResponses, content, shape.props])
 
   // itemsRef — 编辑中的最新文本状态（onInput 实时更新，退出编辑时写回）
   // 注意：编辑期间 tldraw 的其它 updateShape（如继承 conversationId）会改变 items 引用，
@@ -843,6 +867,84 @@ export default function TextBlockContent({
     itemsRef.current = newArr
     saveItems(newArr)
     setPendingFocusItemId(newItem.id)
+  }, [saveItems])
+
+  // 在任意插入槽位置插入一段对话块（新建独立会话）
+  const handleInsertThreadAt = useCallback(async (idx: number) => {
+    const cur = shapeRef.current
+    const ed = editorRef.current
+    if (!cur || !ed) return
+    try {
+      const sessionId = await createDshSessionId()
+      const newItem: MixedItem = {
+        kind: 'thread',
+        id: `thread-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        thread: { sessionId },
+      }
+      const next = [...itemsRef.current]
+      next.splice(Math.max(0, Math.min(idx, next.length)), 0, newItem)
+      itemsRef.current = next
+      saveItems(next)
+      if (!cur.props.conversationId) {
+        ed.updateShape({ id: cur.id, type: 'text-block', props: { conversationId: sessionId } })
+      }
+      sessionLog('thread-item.insert', { sessionId, index: idx, shapeId: cur.id })
+    } catch (reason) {
+      sessionLog('thread-item.add-failed', { message: String((reason as Error)?.message ?? reason) })
+    }
+  }, [saveItems])
+
+  // 在卡片末尾追加一个「对话块」：新建一条 DSH 会话，追加为最后一个条目。
+  // 这样同一张卡里可以有多段对话块，与自文本任意交错。
+  const handleAddThreadBlock = useCallback(async () => {
+    const cur = shapeRef.current
+    const ed = editorRef.current
+    if (!cur || !ed) return
+    try {
+      const sessionId = await createDshSessionId()
+      const newItem: MixedItem = {
+        kind: 'thread',
+        id: `thread-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        thread: { sessionId },
+      }
+      const next = [...itemsRef.current, newItem]
+      itemsRef.current = next
+      saveItems(next)
+      // 第一段对话块承担"主会话"角色（标题/打开/拆分合并用它）
+      if (!cur.props.conversationId) {
+        ed.updateShape({ id: cur.id, type: 'text-block', props: { conversationId: sessionId } })
+      }
+      sessionLog('thread-item.add', { sessionId, shapeId: cur.id })
+    } catch (reason) {
+      sessionLog('thread-item.add-failed', { message: String((reason as Error)?.message ?? reason) })
+    }
+  }, [saveItems])
+
+  // 删除一个对话块条目（只删显示条目，不删 DSH 会话本身）
+  const handleDeleteThreadItem = useCallback((itemId: string) => {
+    const cur = shapeRef.current
+    const next = itemsRef.current.filter((item) => item.id !== itemId)
+    const removed = itemsRef.current.find((item) => item.id === itemId)
+    itemsRef.current = next
+    saveItems(next)
+    if (
+      cur !== undefined &&
+      removed !== undefined &&
+      removed.kind === 'thread' &&
+      removed.thread.sessionId === cur.props.conversationId
+    ) {
+      const fallback = next.find((item): item is Extract<MixedItem, { kind: 'thread' }> => item.kind === 'thread')
+      editorRef.current?.updateShape({
+        id: cur.id,
+        type: 'text-block',
+        props: {
+          conversationId: fallback?.thread.sessionId,
+          sessionFromSeq: undefined,
+          sessionToSeq: undefined,
+        },
+      })
+    }
+    sessionLog('thread-item.remove', { itemId })
   }, [saveItems])
 
   // 把光标所在的子框（user 条目）拆成两个子框，仍然留在同一张卡里。
@@ -1560,6 +1662,73 @@ export default function TextBlockContent({
     )
   }
 
+  // ── 对话块条目渲染（自文本 / 对话块 / AI 回复 平级交错） ──
+  // sole=true：整张卡只有这一个对话块 → 占满剩余高度，输入框贴卡片底部；
+  // 否则作为文档流里的一段固定高度块（260px），卡片整体滚动。
+  const renderThreadItem = (item: Extract<MixedItem, { kind: 'thread' }>, sole: boolean) => {
+    const isPrimary = item.thread.sessionId === conversationId
+    const fromSeq = isPrimary ? sessionFromSeq : item.thread.fromSeq
+    const toSeq = isPrimary ? sessionToSeq : item.thread.toSeq
+    return (
+      <div
+        key={item.id}
+        className="jiashi-thread-block"
+        data-item-id={item.id}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setCtxMenu({
+            x: e.clientX,
+            y: e.clientY,
+            handler: () => handleDeleteThreadItem(item.id),
+            label: '删除此对话块',
+          })
+        }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: sole ? '1 1 auto' : '0 0 auto',
+          minHeight: 0,
+          height: sole ? undefined : 260,
+          margin: '6px 0',
+          borderRadius: 8,
+          background: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(79,124,255,0.04)',
+          border: `1px solid ${isDarkMode ? '#3a3a5c' : '#e3e8f4'}`,
+          overflow: 'hidden',
+        }}
+      >
+        <div className="jiashi-thread-block-head">
+          <span className="jiashi-thread-block-label">对话块</span>
+          <span className="jiashi-thread-block-sub">{isPrimary ? '本卡主会话' : '独立会话'}</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, padding: '0 10px 8px' }}>
+          <SessionThread
+            sessionId={item.thread.sessionId}
+            isDarkMode={isDarkMode}
+            fromSeq={fromSeq}
+            toSeq={toSeq}
+            onSplit={isPrimary ? handleSessionSplit : undefined}
+            onMerge={isPrimary && sessionFromSeq !== undefined ? handleSessionMerge : undefined}
+            pendingPrompt={isPrimary ? pendingDshPrompt ?? undefined : undefined}
+            onPendingPromptConsumed={() => setPendingDshPrompt(null)}
+            onPullText={(text) => handlePullNoteFromText(text)}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  const hasThreadItem = displayItems.some((item) => item.kind === 'thread')
+  // 整张卡只有一段对话块（无自文本）→ 该块独占剩余高度，输入框贴卡片底部
+  const soleThreadItem =
+    displayItems.length === 1 && displayItems[0].kind === 'thread' ? displayItems[0] : null
+  const soleThreadRowStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: '1 1 auto',
+    minHeight: 0,
+  } as const
+
   return (
     <div
           ref={containerRef}
@@ -1598,14 +1767,26 @@ export default function TextBlockContent({
         <div
           className="textblock-editor-wrapper"
           onPointerDown={(e) => e.stopPropagation()}
-          style={{ display: 'flex', flexDirection: 'column', flex: '0 1 auto', minHeight: 0, overflow: 'auto' }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: soleThreadItem !== null ? '1 1 auto' : '0 1 auto',
+            minHeight: 0,
+            overflow: 'auto',
+          }}
         >
           {/* 顶部插入槽 */}
-          <InsertSlot onInsert={() => handleInsertUser(0)} />
+          <InsertSlot onInsert={() => handleInsertUser(0)} onInsertThread={() => void handleInsertThreadAt(0)} />
           {displayItems.map((item, idx) => (
             <div key={item.id}>
-              <div className="tb-item-row" data-item-id={item.id}>
-                {item.kind === 'user' ? (
+              <div
+                className="tb-item-row"
+                data-item-id={item.id}
+                style={item.kind === 'thread' && soleThreadItem !== null ? soleThreadRowStyle : undefined}
+              >
+                {item.kind === 'thread' ? (
+                  renderThreadItem(item, displayItems.length === 1)
+                ) : item.kind === 'user' ? (
                   <div
                     style={{ display: 'flex', alignItems: 'stretch', marginBottom: '4px' }}
                     onContextMenu={(e) => {
@@ -1656,28 +1837,35 @@ export default function TextBlockContent({
                 )}
               </div>
               {/* 条目之后插入槽 */}
-              <InsertSlot onInsert={() => handleInsertUser(idx + 1)} />
+              <InsertSlot
+                onInsert={() => handleInsertUser(idx + 1)}
+                onInsertThread={() => void handleInsertThreadAt(idx + 1)}
+              />
             </div>
           ))}
 
           {/* 流式中的待定回复 */}
           {renderPendingCard()}
+
+          {/* 末尾追加对话块（编辑态可见）：一张卡可以有多段对话块，与自文本交错 */}
+          <div className="jiashi-add-thread-row">
+            <button
+              type="button"
+              className="jiashi-add-thread-btn"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                void handleAddThreadBlock()
+              }}
+              title="在末尾新建一段独立会话的对话块"
+            >
+              ＋ 对话块
+            </button>
+          </div>
         </div>
-        {/* AI 输入栏 / DSH 会话线程：放在编辑容器外，作为卡片内容区的弹性子项，
-            这样线程能占满剩余高度、输入框贴卡片底部 */}
-        {dshSessionId ? (
-          <SessionThread
-            sessionId={dshSessionId}
-            isDarkMode={isDarkMode}
-            fromSeq={sessionFromSeq}
-            toSeq={sessionToSeq}
-            onSplit={handleSessionSplit}
-            onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
-            pendingPrompt={pendingDshPrompt ?? undefined}
-            onPendingPromptConsumed={() => setPendingDshPrompt(null)}
-            onPullText={(text) => handlePullNoteFromText(text)}
-          />
-        ) : (
+        {/* 未绑定任何会话时才显示初始输入栏；对话块自带输入栏 */}
+        {!hasThreadItem && (
           <AIInputBar
             contentText={fragments[0] || ''}
             conversationId={activeCid}
@@ -1719,8 +1907,15 @@ export default function TextBlockContent({
           }}
         >
           {displayItems.map((item) => (
-            <div key={item.id} className="tb-item-row" data-item-id={item.id}>
-              {item.kind === 'user' ? (
+            <div
+              key={item.id}
+              className="tb-item-row"
+              data-item-id={item.id}
+              style={item.kind === 'thread' && soleThreadItem !== null ? soleThreadRowStyle : undefined}
+            >
+              {item.kind === 'thread' ? (
+                renderThreadItem(item, displayItems.length === 1)
+              ) : item.kind === 'user' ? (
                 <div
                   style={{ display: 'flex', alignItems: 'stretch' }}
                   onContextMenu={(e) => {
@@ -1771,21 +1966,6 @@ export default function TextBlockContent({
 
           {/* 流式中的待定回复 */}
           {renderPendingCard()}
-
-          {/* 绑定 DSH 会话时，预览态也显示会话线程 */}
-          {dshSessionId && (
-            <SessionThread
-              sessionId={dshSessionId}
-              isDarkMode={isDarkMode}
-              fromSeq={sessionFromSeq}
-              toSeq={sessionToSeq}
-              onSplit={handleSessionSplit}
-              onMerge={sessionFromSeq !== undefined ? handleSessionMerge : undefined}
-              pendingPrompt={pendingDshPrompt ?? undefined}
-              onPendingPromptConsumed={() => setPendingDshPrompt(null)}
-              onPullText={(text) => handlePullNoteFromText(text)}
-            />
-          )}
         </div>
       )}
 

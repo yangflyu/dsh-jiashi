@@ -7,3 +7,6 @@ Thumbs.db
 *.tmp
 lib/client.bundle.js
 *.bak-diag
+
+# 本地报名表/私人文档，不进仓库
+docs/官方作者报名表-*.md
