@@ -254,14 +254,17 @@ export function itemsWithLegacyThread(
   const primary = props.conversationId
   if (primary === undefined || primary === '' || !isDshSessionId(primary)) return items
   if (items.some((item) => item.kind === 'thread' && item.thread.sessionId === primary)) return items
-  return [
-    ...items,
-    {
-      kind: 'thread',
-      id: 'primary-thread',
-      thread: { sessionId: primary, fromSeq: props.sessionFromSeq, toSeq: props.sessionToSeq },
-    },
-  ]
+  const legacyThread: MixedItem = {
+    kind: 'thread',
+    id: 'primary-thread',
+    thread: { sessionId: primary, fromSeq: props.sessionFromSeq, toSeq: props.sessionToSeq },
+  }
+  // 主会话块代表"原有的那段对话"，排在其它后加的对话块之前（插在第一个 thread 条目前）
+  const firstThreadIdx = items.findIndex((item) => item.kind === 'thread')
+  if (firstThreadIdx < 0) return [...items, legacyThread]
+  const next = [...items]
+  next.splice(firstThreadIdx, 0, legacyThread)
+  return next
 }
 
 /** 取卡片里的第一个对话块作为"主会话"（标题/打开/拆分合并用它）。 */

@@ -1846,23 +1846,22 @@ export default function TextBlockContent({
 
           {/* 流式中的待定回复 */}
           {renderPendingCard()}
-
-          {/* 末尾追加对话块（编辑态可见）：一张卡可以有多段对话块，与自文本交错 */}
-          <div className="jiashi-add-thread-row">
-            <button
-              type="button"
-              className="jiashi-add-thread-btn"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                void handleAddThreadBlock()
-              }}
-              title="在末尾新建一段独立会话的对话块"
-            >
-              ＋ 对话块
-            </button>
-          </div>
+        </div>
+        {/* 末尾追加对话块：放在编辑容器外，保证在任何卡高下都可见（不被滚动区裁掉） */}
+        <div className="jiashi-add-thread-row">
+          <button
+            type="button"
+            className="jiashi-add-thread-btn"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              void handleAddThreadBlock()
+            }}
+            title="在末尾新建一段独立会话的对话块"
+          >
+            ＋ 对话块
+          </button>
         </div>
         {/* 未绑定任何会话时才显示初始输入栏；对话块自带输入栏 */}
         {!hasThreadItem && (

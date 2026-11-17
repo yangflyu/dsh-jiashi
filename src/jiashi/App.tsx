@@ -1,6 +1,7 @@
 import { Tldraw, useEditor, createShapeId, Editor, useActions, useTools, TLUiEventSource, TLShapeId } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { TextBlockShapeUtil, createChildBlock, DEFAULT_W, DEFAULT_H } from './shapes/TextBlockShapeUtil'
+import { TextBlockShapeUtil, createChildBlock, deriveTextBlockProps, DEFAULT_W, DEFAULT_H } from './shapes/TextBlockShapeUtil'
+import type { MixedItem } from './shapes/TextBlockShapeUtil'
 import LinearView from './components/LinearView'
 import AISettingsPanel from './components/AISettingsPanel'
 import { KeyboardInterceptor } from './keyboard/KeyboardInterceptor'
@@ -26,7 +27,7 @@ type AppMode = 'canvas' | 'linear'
  * Toolbar — overlays on top of tldraw canvas.
  * Only rendered in canvas mode. In linear mode, LinearView has its own bar.
  */
-function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard, onAddChildCard, onCleanEmptyCards, onClearBoard }: {
+function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggleAttention, attentionActive, onCreateSessionCard, onAddChildCard, onAddThreadBlock, onCleanEmptyCards, onClearBoard }: {
   onToggleMode: () => void
   onOpenSettings: () => void
   onOpenShortcuts: () => void
@@ -34,6 +35,7 @@ function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggle
   attentionActive: boolean
   onCreateSessionCard: () => void
   onAddChildCard: () => void
+  onAddThreadBlock: () => void
   onCleanEmptyCards: () => void
   onClearBoard: () => void
 }) {
@@ -106,6 +108,17 @@ function CustomToolbar({ onToggleMode, onOpenSettings, onOpenShortcuts, onToggle
           <rect x="7" y="17" width="10" height="5" rx="1.5" />
         </svg>
         <span className="toolbar-label">子卡</span>
+      </button>
+
+      {/* 对话块：在选中的卡片末尾追加一段独立会话（卡内自文本/对话块平级交错的入口） */}
+      <button className="toolbar-btn" onClick={onAddThreadBlock} title="在选中的卡片末尾追加一段「对话块」（独立会话；不删原会话）">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="7" rx="2" />
+          <rect x="3" y="14" width="18" height="7" rx="2" />
+          <path d="M9 17.5h6" />
+          <path d="M12 15v5" />
+        </svg>
+        <span className="toolbar-label">对话块</span>
       </button>
 
       {/* Divider */}
@@ -627,6 +640,61 @@ export default function App() {
     })
   }, [editor])
 
+  // 工具栏「对话块」：给选中的卡片末尾追加一段独立会话的对话块（卡内条目平级交错的可见入口）
+  const addThreadBlockToCard = useCallback(async () => {
+    if (!editor) return
+    const onlyId = editor.getOnlySelectedShapeId()
+    if (onlyId === null) return
+    const shape = editor.getShape(onlyId)
+    if (shape === undefined || shape.type !== 'text-block') return
+    try {
+      const sessionId = await createDshSessionId()
+      const props = shape.props as unknown as {
+        items?: MixedItem[]
+        userTextFragments?: string[]
+        content?: string
+        conversationId?: string
+      }
+      let base: MixedItem[]
+      if (Array.isArray(props.items) && props.items.length > 0) {
+        base = [...props.items]
+      } else {
+        base = []
+        const texts = Array.isArray(props.userTextFragments) && props.userTextFragments.length > 0
+          ? props.userTextFragments
+          : (typeof props.content === 'string' && props.content.trim() !== '' ? [props.content] : [])
+        for (const text of texts) base.push({ kind: 'user', id: `migrated-user-${base.length}`, text })
+      }
+      // 旧卡的"主会话"还没物化成条目时先补上，保证新对话块排在它后面
+      const primary = props.conversationId
+      if (
+        typeof primary === 'string' && primary !== '' &&
+        !base.some((item) => item.kind === 'thread' && item.thread.sessionId === primary)
+      ) {
+        base.push({ kind: 'thread', id: 'primary-thread', thread: { sessionId: primary } })
+      }
+      base.push({
+        kind: 'thread',
+        id: `thread-${Date.now().toString(36)}`,
+        thread: { sessionId },
+      })
+      editor.updateShape({
+        id: shape.id,
+        type: 'text-block',
+        props: {
+          ...deriveTextBlockProps(base),
+          items: base,
+          conversationId: props.conversationId !== undefined && props.conversationId !== ''
+            ? props.conversationId
+            : sessionId,
+        } as never,
+      })
+      sessionLog('thread-item.add-toolbar', { sessionId, shapeId: shape.id })
+    } catch (error) {
+      sessionLog('thread-item.add-failed', { error: String((error as Error)?.message ?? error) })
+    }
+  }, [editor])
+
   // 手动画箭头连接两张文本块时：目标没有会话就继承来源的会话，并从来源结束位置之后续接。
   useEffect(() => {
     if (!editor) return undefined
@@ -814,6 +882,7 @@ export default function App() {
             attentionActive={attentionActive}
             onCreateSessionCard={createSessionCard}
             onAddChildCard={addChildCard}
+            onAddThreadBlock={addThreadBlockToCard}
             onCleanEmptyCards={cleanEmptyCards}
             onClearBoard={clearBoard}
           />
