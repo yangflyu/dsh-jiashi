@@ -900,6 +900,7 @@ export default function TextBlockContent({
     const cur = shapeRef.current
     const ed = editorRef.current
     if (!cur || !ed) return
+    const callId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
     try {
       const sessionId = await createDshSessionId()
       const newItem: MixedItem = {
@@ -907,6 +908,7 @@ export default function TextBlockContent({
         id: `thread-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         thread: { sessionId },
       }
+      const before = itemsRef.current.length
       const next = [...itemsRef.current, newItem]
       itemsRef.current = next
       saveItems(next)
@@ -914,9 +916,9 @@ export default function TextBlockContent({
       if (!cur.props.conversationId) {
         ed.updateShape({ id: cur.id, type: 'text-block', props: { conversationId: sessionId } })
       }
-      sessionLog('thread-item.add', { sessionId, shapeId: cur.id })
+      sessionLog('thread-item.add', { callId, sessionId, shapeId: cur.id, before, after: next.length })
     } catch (reason) {
-      sessionLog('thread-item.add-failed', { message: String((reason as Error)?.message ?? reason) })
+      sessionLog('thread-item.add-failed', { callId, message: String((reason as Error)?.message ?? reason) })
     }
   }, [saveItems])
 
@@ -1700,6 +1702,19 @@ export default function TextBlockContent({
         <div className="jiashi-thread-block-head">
           <span className="jiashi-thread-block-label">对话块</span>
           <span className="jiashi-thread-block-sub">{isPrimary ? '本卡主会话' : '独立会话'}</span>
+          <button
+            type="button"
+            className="jiashi-thread-block-del"
+            title="删除此对话块（只删显示条目，不删 DSH 会话）"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleDeleteThreadItem(item.id)
+            }}
+          >
+            ×
+          </button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, padding: '0 10px 8px' }}>
           <SessionThread

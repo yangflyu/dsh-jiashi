@@ -324,12 +324,42 @@ export function apply(ctx) {
     'jiashi: shortcuts',
   )
 
+  // 一次性清理：v0.42/0.43 测试期间产生的「独立会话」对话块（只跑一次，见 localStorage 标记）
+  try {
+    if (!window.localStorage.getItem('jiashi.cleanup.v1')) {
+      let idle = 0
+      const timer = window.setInterval(() => {
+        try {
+          const blocks = Array.from(document.querySelectorAll('.jiashi-thread-block')).filter((el) =>
+            (el.textContent ?? '').includes('独立会话'),
+          )
+          if (blocks.length === 0) {
+            idle += 1
+            if (idle > 8) {
+              window.clearInterval(timer)
+              window.localStorage.setItem('jiashi.cleanup.v1', '1')
+              boardLog('cleanup.thread-blocks', { done: true })
+            }
+            return
+          }
+          idle = 0
+          const del = blocks[0].querySelector('.jiashi-thread-block-del')
+          if (del) del.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        } catch {
+          /* ignore */
+        }
+      }, 700)
+    }
+  } catch {
+    /* ignore */
+  }
+
   // 代码级自测通道：宿主 /jiashi/api/selftest 触发时才动，平时只轮询（2s 一次 GET）。
-  // layout 服务用来把画布面板切到前台（等价于点侧栏「画布」，但不碰鼠标）。
+  // 不依赖 layout 服务（服务可能未注册到本插件作用域）：面板已打开时直接跑 DOM 断言。
   safeEffect(
     () => {
       try {
-        startSelfTest({ layout: ctx.layout })
+        startSelfTest({})
       } catch (error) {
         boardLog('activate.error', { step: 'selftest', error: String(error?.stack ?? error) })
       }

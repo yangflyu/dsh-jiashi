@@ -2162,3 +2162,18 @@
   border-color: #7c4dff;
   color: #7c4dff;
 }
+
+/* 对话块标题栏的删除按钮（替代右键菜单，便于精确点击/自动测试） */
+.jiashi-thread-block-del {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #98a2b3;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.jiashi-thread-block-del:hover {
+  color: #e04f5f;
+}
