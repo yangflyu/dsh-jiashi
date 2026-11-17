@@ -12,7 +12,7 @@
  * 静态资源在 DSH 里本来就是公开的（只有 /api 需要会话 cookie），所以
  * /jiashi/ 不需要额外的鉴权层。
  */
-import { appendFile, mkdir, readFile, stat } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,6 +32,10 @@ const LOG_DIR = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'jiashi')
 const LOG_FILE = join(LOG_DIR, 'board.log')
 const LOG_PATH = `${BASE}api/log`
 const CREATE_PATH = `${BASE}api/session/create`
+/** 代码级自测：触发文件（客户端轮询其 run 字段）与报告文件。 */
+const SELFTEST_TRIGGER_FILE = join(LOG_DIR, 'selftest.json')
+const SELFTEST_REPORT_FILE = join(LOG_DIR, 'selftest-report.json')
+const SELFTEST_PATH = `${BASE}api/selftest`
 
 /** Host 侧 sessionController 引用（由 apply 里的 inject 填充）。 */
 let sessionController
@@ -175,6 +179,46 @@ async function handleLog(req, res) {
   res.end()
 }
 
+/**
+ * 代码级自测通道（不碰鼠标/截图）：
+ *  - GET  → 读 $DSH_HOME/jiashi/selftest.json 的 run 字段，客户端据此决定是否跑测试；
+ *  - POST → 客户端上报测试结果（写 selftest-report.json，同时进 board.log）。
+ */
+async function handleSelftest(req, res) {
+  if (req.method === 'GET') {
+    let run = ''
+    try {
+      const raw = await readFile(SELFTEST_TRIGGER_FILE, 'utf8')
+      const parsed = JSON.parse(raw)
+      run = String(parsed?.run ?? '')
+    } catch {
+      run = ''
+    }
+    writeJson(res, { run })
+    return
+  }
+  if (req.method !== 'POST') {
+    res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('method not allowed')
+    return
+  }
+  const body = await readBody(req)
+  if (body === '') {
+    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('empty body')
+    return
+  }
+  try {
+    await mkdir(LOG_DIR, { recursive: true })
+    await writeFile(SELFTEST_REPORT_FILE, body, 'utf8')
+    await appendFile(LOG_FILE, `${new Date().toISOString()} ${JSON.stringify({ event: 'selftest.report', data: JSON.parse(body) })}\n`, 'utf8')
+  } catch {
+    /* 写不进去不影响画布 */
+  }
+  res.writeHead(204, { 'cache-control': 'no-store' })
+  res.end()
+}
+
 async function serve(req, res) {
   try {
     const url = new URL(req.url ?? BASE, 'http://127.0.0.1')
@@ -185,6 +229,10 @@ async function serve(req, res) {
     }
     if (pathname === CREATE_PATH) {
       await handleCreateSession(req, res)
+      return
+    }
+    if (pathname === SELFTEST_PATH) {
+      await handleSelftest(req, res)
       return
     }
     let rel = pathname === ROUTE_PATH

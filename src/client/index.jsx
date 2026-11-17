@@ -6,6 +6,7 @@ import App from '../jiashi/App'
 import { configureSessionRuntime } from '../jiashi/session/bridge'
 import { hasActiveSplit, runActiveSplit } from '../jiashi/session/cardSplit'
 import { SessionInfoProvider } from '../jiashi/session/SessionInfo'
+import { startSelfTest } from './selftest'
 
 /**
  * 架势画布（dsh-jiashi）— Client 半边（v0.3，UI 移植版）。
@@ -321,6 +322,19 @@ export function apply(ctx) {
         }
       }),
     'jiashi: shortcuts',
+  )
+
+  // 代码级自测通道：宿主 /jiashi/api/selftest 触发时才动，平时只轮询（2s 一次 GET）。
+  // layout 服务用来把画布面板切到前台（等价于点侧栏「画布」，但不碰鼠标）。
+  safeEffect(
+    () => {
+      try {
+        startSelfTest({ layout: ctx.layout })
+      } catch (error) {
+        boardLog('activate.error', { step: 'selftest', error: String(error?.stack ?? error) })
+      }
+    },
+    'jiashi: selftest',
   )
 }
 
